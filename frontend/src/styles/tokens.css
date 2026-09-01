@@ -1,0 +1,31 @@
+/* GitLane design tokens — PLAN.md section 3.1 (obligatoire). */
+:root {
+  --bg-app: #f6f8fb;
+  --bg-panel: #ffffff;
+  --bg-row-even: #fbfcfe;
+  --bg-row-hover: #eef5ff;
+  --bg-row-selected: #e2efff;
+  --border-soft: #e6eaf1;
+
+  --text-main: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #94a3b8;
+
+  --ok: #22c55e;
+  --fail: #ef4444;
+  --warn: #f59e0b;
+  --info: #3b82f6;
+
+  --lane-1: #f79ac0;
+  --lane-2: #8dd3ff;
+  --lane-3: #9ee6b5;
+  --lane-4: #ffd48a;
+  --lane-5: #c3b6ff;
+  --lane-6: #ffb2a6;
+  --lane-7: #94e2d5;
+  --lane-8: #b7e48a;
+  --lane-9: #f6b0e5;
+  --lane-10: #a0c4ff;
+  --lane-11: #ffd6a5;
+  --lane-12: #caffbf;
+}
