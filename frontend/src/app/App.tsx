@@ -1,7 +1,7 @@
 /** GitLane app shell: toolbar + mini timeline + commit table (PLAN sections 2 & 4). */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { fetchHistory, fetchTimeline, openRepo, type CommitItem, type RepoInfo } from "../api/client";
+import { fetchHistory, fetchTimeline, openRepo, type CommitItem } from "../api/client";
 import { useRepoEvents } from "../api/events";
 import { repoStore } from "../store/useRepoStore";
 import TopToolbar from "../components/TopToolbar";
@@ -22,18 +22,25 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | undefined>(undefined);
+  const loadSeq = useRef(0); // stale-response guard: only the latest load writes
 
-  const load = useCallback(async (path: string, q: string) => {
+  const load = useCallback(async (path: string, q: string, reopen = true) => {
+    const seq = ++loadSeq.current;
     const t0 = performance.now();
     repoStore.set({ status: s.repoPath === path ? s.status : "loading", error: null, repoPath: path });
     try {
-      const repo: RepoInfo = await openRepo(path);
-      // Use the backend-normalized path for all subsequent calls (cache key).
-      const repoPath = repo.path;
+      let repoPath = path;
+      let repo = repoStore.get().repo;
+      if (reopen || !repo) {
+        // Full reopen re-reads git data and refreshes the server cache.
+        repo = await openRepo(path);
+        repoPath = repo.path;
+      }
       const [history, timeline] = await Promise.all([
         fetchHistory(repoPath, { limit: 300, q }),
         fetchTimeline(repoPath),
       ]);
+      if (seq !== loadSeq.current) return; // a newer load superseded this one
       repoStore.set({
         repo,
         repoPath,
@@ -45,6 +52,7 @@ export default function App() {
         lastFetchMs: Math.round(performance.now() - t0),
       });
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       repoStore.set({ status: "error", error: e instanceof Error ? e.message : String(e) });
     }
   }, [s.repoPath]);
@@ -57,7 +65,7 @@ export default function App() {
     if (!s.repoPath) return;
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      void load(s.repoPath!, s.query);
+      void load(s.repoPath!, s.query, false);
     }, 130);
     return () => window.clearTimeout(debounceRef.current);
   }, [s.query]); // eslint-disable-line react-hooks/exhaustive-deps
