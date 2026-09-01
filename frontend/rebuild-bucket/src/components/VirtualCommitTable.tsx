@@ -10,6 +10,7 @@ import CommitRow from "./CommitRow";
 import { ROW_HEIGHT } from "../graph/coords";
 
 const OVERDRAW = 8; // rows rendered above/below the viewport
+const LOAD_MORE_EDGE = 400; // px from bottom to trigger the next page
 
 interface Props {
   items: CommitItem[];
@@ -17,6 +18,9 @@ interface Props {
   hoveredSha: string | null;
   selectedSha: string | null;
   query: string;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onHover: (sha: string | null) => void;
   onSelect: (sha: string) => void;
   onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
@@ -24,10 +28,17 @@ interface Props {
 }
 
 export default function VirtualCommitTable({
-  items, graphWidth, hoveredSha, selectedSha, query, onHover, onSelect, onScroll, scrollRef,
+  items, graphWidth, hoveredSha, selectedSha, query,
+  hasMore, loadingMore, onLoadMore, onHover, onSelect, onScroll, scrollRef,
 }: Props) {
   const [range, setRange] = useState({ start: 0, end: Math.min(items.length, 40) });
   const frame = useRef<number | undefined>(undefined);
+  const guard = useRef({ hasMore, loadingMore, onLoadMore, length: items.length });
+
+  // Keep the latest pagination facts available to the rAF scroll handler.
+  useEffect(() => {
+    guard.current = { hasMore, loadingMore, onLoadMore, length: items.length };
+  }, [hasMore, loadingMore, onLoadMore, items.length]);
 
   const recompute = useCallback(() => {
     const el = scrollRef.current;
@@ -35,6 +46,15 @@ export default function VirtualCommitTable({
     const first = Math.max(0, Math.floor(el.scrollTop / ROW_HEIGHT) - OVERDRAW);
     const visible = Math.ceil(el.clientHeight / ROW_HEIGHT) + 2 * OVERDRAW;
     setRange({ start: first, end: Math.min(items.length, first + visible) });
+
+    // Infinite scroll: load the next page when the user nears the bottom.
+    if (
+      guard.current.hasMore &&
+      !guard.current.loadingMore &&
+      el.scrollTop + el.clientHeight >= el.scrollHeight - LOAD_MORE_EDGE
+    ) {
+      guard.current.onLoadMore();
+    }
   }, [items.length, scrollRef]);
 
   useEffect(() => {
@@ -83,6 +103,13 @@ export default function VirtualCommitTable({
             />
           ))}
         </div>
+      </div>
+      <div className="commit-scroll-footer">
+        {loadingMore
+          ? "Chargement…"
+          : hasMore
+            ? "↓ Scrollez pour charger la suite"
+            : "Fin de l’historique"}
       </div>
       <style>{`.commit-rows { --graph-width: ${graphWidth}px; }`}</style>
     </div>

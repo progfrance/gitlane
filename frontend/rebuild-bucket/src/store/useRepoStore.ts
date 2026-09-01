@@ -13,6 +13,9 @@ export interface RepoState {
   hoveredSha: string | null;
   selectedSha: string | null;
   lastFetchMs: number | null;
+  nextCursor: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
 }
 
 type Listener = () => void;
@@ -30,6 +33,9 @@ let state: RepoState = {
   hoveredSha: null,
   selectedSha: null,
   lastFetchMs: null,
+  nextCursor: null,
+  hasMore: false,
+  loadingMore: false,
 };
 
 const listeners = new Set<Listener>();

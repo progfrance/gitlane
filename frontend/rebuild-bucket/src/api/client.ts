@@ -98,10 +98,11 @@ export async function fetchCurrentRepo(): Promise<RepoInfo | null> {
 
 export async function fetchHistory(
   path: string,
-  opts: { limit?: number; q?: string } = {}
+  opts: { limit?: number; q?: string; cursor?: string } = {}
 ): Promise<HistoryEnvelope> {
   const params = new URLSearchParams({ path, limit: String(opts.limit ?? 300) });
   if (opts.q) params.set("q", opts.q);
+  if (opts.cursor) params.set("cursor", opts.cursor);
   const res = await fetch(`/history?${params}`);
   return jsonOrThrow<HistoryEnvelope>(res);
 }

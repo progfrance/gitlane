@@ -50,12 +50,35 @@ export default function App() {
         timeline,
         status: "ready",
         lastFetchMs: Math.round(performance.now() - t0),
+        nextCursor: history.next_cursor,
+        hasMore: history.has_more,
+        loadingMore: false,
       });
     } catch (e) {
       if (seq !== loadSeq.current) return;
-      repoStore.set({ status: "error", error: e instanceof Error ? e.message : String(e) });
+      repoStore.set({ status: "error", error: e instanceof Error ? e.message : String(e), loadingMore: false });
     }
   }, [s.repoPath]);
+
+  // Load the next page of history (infinite scroll).
+  const loadMore = useCallback(async () => {
+    const cur = repoStore.get();
+    if (!cur.repoPath || !cur.nextCursor || !cur.hasMore || cur.loadingMore) return;
+    const seq = loadSeq.current;
+    repoStore.set({ loadingMore: true });
+    try {
+      const history = await fetchHistory(cur.repoPath, { limit: 300, q: cur.query, cursor: cur.nextCursor });
+      if (seq !== loadSeq.current) return; // a full reload superseded this pagination
+      repoStore.set({
+        items: [...cur.items, ...history.items],
+        nextCursor: history.next_cursor,
+        hasMore: history.has_more,
+        loadingMore: false,
+      });
+    } catch {
+      repoStore.set({ loadingMore: false });
+    }
+  }, []);
 
   // Initial load: prefer the repo already open server-side (picker / last
   // session), fall back to DEFAULT_REPO only when nothing is open.
@@ -167,6 +190,9 @@ export default function App() {
               hoveredSha={s.hoveredSha}
               selectedSha={s.selectedSha}
               query={s.query}
+              hasMore={s.hasMore}
+              loadingMore={s.loadingMore}
+              onLoadMore={() => void loadMore()}
               onHover={(sha) => repoStore.set({ hoveredSha: sha })}
               onSelect={(sha) => repoStore.set({ selectedSha: sha })}
               onScroll={(e) => {

@@ -26,5 +26,5 @@ Puis committer le nouveau `dist/` (bundle gelé) **et** ré-injecter le tag
 | Fichier | Rôle |
 |---|---|
 | `index.html` | Coquille React + tag patches |
-| `assets/index-*.js` | Bundle JS minifié (~159 KB) |
+| `assets/index-*.js` | Bundle JS minifié (~160 KB) |
 | `assets/index-*.css` | Styles du design system (~7 KB) |
