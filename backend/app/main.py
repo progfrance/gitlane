@@ -37,5 +37,22 @@ def health() -> dict:
 
 # Serve the built frontend in production (single-process deploy).
 _DIST = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+
+
+class _FrontendStaticFiles(StaticFiles):
+    """A root mount must never receive websocket scopes (uvicorn asserts hard
+    on them); reject the handshake cleanly instead of a 500 traceback."""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            while True:
+                message = await receive()
+                if message["type"] == "websocket.connect":
+                    break
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        await super().__call__(scope, receive, send)
+
+
 if os.path.isdir(_DIST):
-    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
+    app.mount("/", _FrontendStaticFiles(directory=_DIST, html=True), name="frontend")
