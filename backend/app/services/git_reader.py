@@ -1,0 +1,172 @@
+"""Git data extraction through the git CLI (subprocess, no shell injection).
+
+All commands run with a timeout and a fixed argument list — no user-controlled
+shell strings are ever composed (see PLAN.md section 16).
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+from dataclasses import dataclass, field
+
+GIT_TIMEOUT = 15  # seconds
+
+_LOG_FORMAT = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1e"
+
+
+class GitError(Exception):
+    """Raised when a git command fails or the target is not a repository."""
+
+
+@dataclass
+class CommitData:
+    sha: str
+    parents: list[str] = field(default_factory=list)
+    author_name: str = ""
+    author_email: str = ""
+    timestamp: int = 0
+    subject: str = ""
+    decorations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RefsData:
+    head: str = "HEAD"
+    head_sha: str | None = None
+    local_branches: dict[str, str] = field(default_factory=dict)   # shortname -> sha
+    remote_branches: dict[str, str] = field(default_factory=dict)  # shortname -> sha
+    tags: dict[str, str] = field(default_factory=dict)             # shortname -> sha
+
+
+def _run(repo_path: str, args: list[str], timeout: int = GIT_TIMEOUT) -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo_path, *args],
+            capture_output=True,
+            timeout=timeout,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise GitError("git executable not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitError(f"git {' '.join(args[:2])} timed out") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
+        raise GitError(stderr or f"git {' '.join(args[:2])} failed") from exc
+    return proc.stdout.decode(errors="replace")
+
+
+def is_git_repo(path: str) -> bool:
+    if not path or not os.path.isdir(path):
+        return False
+    try:
+        out = _run(path, ["rev-parse", "--is-inside-work-tree"], timeout=5)
+        return out.strip() == "true"
+    except GitError:
+        return False
+
+
+def repo_name(path: str) -> str:
+    return os.path.basename(os.path.normpath(path)) or path
+
+
+def read_refs(repo_path: str) -> RefsData:
+    data = RefsData()
+    data.head_sha = _run(repo_path, ["rev-parse", "HEAD"]).strip() or None
+    try:
+        data.head = _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "HEAD"
+    except GitError:
+        data.head = "HEAD"
+
+    for_each = _run(
+        repo_path,
+        ["for-each-ref", "--format=%(refname)%00%(objectname)", "refs/"],
+    )
+    for line in for_each.splitlines():
+        if not line or "\x00" not in line:
+            continue
+        refname, sha = line.split("\x00", 1)
+        if refname.startswith("refs/heads/"):
+            data.local_branches[refname[len("refs/heads/"):]] = sha
+        elif refname.startswith("refs/remotes/") and not refname.endswith("/HEAD"):
+            data.remote_branches[refname[len("refs/remotes/"):]] = sha
+        elif refname.startswith("refs/tags/"):
+            data.tags[refname[len("refs/tags/"):]] = sha
+    return data
+
+
+def read_commits(repo_path: str, ref: str = "HEAD", max_count: int | None = None) -> list[CommitData]:
+    """Read the full history of `ref` in topological order (children first)."""
+    args = ["log", "--topo-order", f"--format={_LOG_FORMAT}"]
+    if max_count:
+        args.append(f"--max-count={max_count}")
+    # Revision must come BEFORE the "--" separator, otherwise git treats it
+    # as a path spec and returns an empty log.
+    args.append(_sanitize_rev(ref))
+    args.append("--")
+
+    out = _run(repo_path, args)
+    commits: list[CommitData] = []
+    for record in out.split("\x1e"):
+        record = record.strip("\n")
+        if not record.strip():
+            continue
+        parts = record.split("\x1f")
+        if len(parts) < 7:
+            continue
+        sha, parents, an, ae, at, subject, deco = parts[:7]
+        decorations = []
+        for d in deco.split(","):
+            d = d.strip()
+            if d and d not in ("HEAD", "grafted", "staged-changes", "staged-contents"):
+                decorations.append(d)
+        commits.append(
+            CommitData(
+                sha=sha,
+                parents=parents.split() if parents else [],
+                author_name=an,
+                author_email=ae,
+                timestamp=int(at) if at.isdigit() else 0,
+                subject=subject,
+                decorations=decorations,
+            )
+        )
+    return commits
+
+
+def _is_valid_ref(ref: str) -> bool:
+    # Defensive: only allow ref-looking tokens, never options.
+    return bool(ref) and not ref.startswith("-") and " " not in ref and "\x00" not in ref
+
+
+def count_commits(repo_path: str, ref: str = "HEAD") -> int:
+    out = _run(repo_path, ["rev-list", "--count", _sanitize_rev(ref)])
+    return int(out.strip() or 0)
+
+
+def _sanitize_rev(ref: str) -> str:
+    return ref if _is_valid_ref(ref) else "HEAD"
+
+
+def relative_time(timestamp: int, now: int | None = None) -> str:
+    """Human readable relative time (English, as per the visual spec)."""
+    import time
+
+    now = now if now is not None else int(time.time())
+    delta = max(0, now - timestamp)
+    if delta < 60:
+        return "just now"
+    minutes = delta // 60
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = hours // 24
+    if days < 31:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    months = days // 31
+    if months < 12:
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    years = days // 365
+    return f"{years} year{'s' if years != 1 else ''} ago"
