@@ -188,10 +188,10 @@ body {
 
 .commit-row {
   display: grid;
-  grid-template-columns: var(--graph-width, 180px) minmax(280px, 1fr) 150px 220px;
+  grid-template-columns: var(--graph-width, 180px) 128px minmax(240px, 1fr) 170px 230px;
   align-items: center;
   height: 32px;
-  padding: 0 12px 0 0;
+  padding: 0 14px 0 0;
   cursor: default;
   position: relative;
   border-bottom: 1px solid rgba(229, 229, 234, 0.45);
@@ -224,16 +224,22 @@ body {
   height: 100%;
 }
 
+/* Branch pills sit in their own column, between the graph and the message. */
+.commit-refs-col {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-right: 8px;
+  overflow: hidden;
+}
+
 .commit-message {
   font-size: 12.5px;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  padding-right: 10px;
   min-width: 0;
 }
 
@@ -258,8 +264,7 @@ body {
   gap: 4px;
   align-items: center;
   overflow: hidden;
-  flex: 0 1 auto;
-  max-width: 60%;
+  max-width: 100%;
 }
 
 .ref-pill {
@@ -312,8 +317,10 @@ body {
 .author-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-end;
+  gap: 8px;
   min-width: 0;
+  padding-right: 4px;
 }
 
 .avatar {
@@ -346,7 +353,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
+  white-space: nowrap;
 }
 
 .rel-time {
@@ -358,12 +366,15 @@ body {
 .sha {
   font-size: 11px;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
 }
 
 .diff-stat {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11px;
   font-weight: 600;
   font-family: var(--font-mono);
@@ -376,7 +387,7 @@ body {
 .diff-squares {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 2.5px;
 }
 
 .diff-square {

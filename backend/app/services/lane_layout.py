@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 ROW_HEIGHT = 32.0
 NODE_Y = ROW_HEIGHT / 2.0
 LANE_GAP = 20.0
-NODE_R = 5.5
+NODE_R = 6.5
 LINE_W = 2.0
 FIRST_LANE_X = 24.0
 

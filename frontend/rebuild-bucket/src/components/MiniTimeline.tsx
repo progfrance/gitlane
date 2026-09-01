@@ -1,4 +1,4 @@
-/** Mini activity timeline with area fill, green/red bars, and viewport window.
+/** Mini activity timeline with area fill, fine green/red bars, and viewport window.
  *  Reference: GitKraken-style sparkline with bicolor diff histogram. */
 import { useEffect, useRef } from "react";
 import type { TimelineData } from "../api/client";
@@ -38,26 +38,27 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
     const maxDels = Math.max(1, ...pts.map((p) => p.dels));
     const bw = w / pts.length;
     const mid = h / 2;
+    const barW = Math.max(1, Math.min(3, bw * 0.45)); // fine sticks, grid-aligned
+    const maxBarH = h / 2 - 9; // keep bars short so the envelope reads above
 
-    // Layer 1: green/red micro-bars for additions / deletions.
+    // Layer 1: fine green/red sticks (additions up, deletions down from mid).
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
-      // Green bar (additions) — upward from mid.
+      const cx = i * bw + bw / 2;
       if (p.adds > 0) {
-        const bh = Math.max(1.5, (p.adds / maxAdds) * (h / 2 - 4));
+        const bh = Math.max(1.5, (p.adds / maxAdds) * maxBarH);
         ctx.fillStyle = GREEN;
-        ctx.globalAlpha = 0.6;
+        ctx.globalAlpha = 0.55;
         ctx.beginPath();
-        ctx.roundRect(i * bw + 2, mid - bh, Math.max(1, bw * 0.7), bh, 1);
+        ctx.roundRect(cx - barW / 2, mid - bh, barW, bh, 1);
         ctx.fill();
       }
-      // Red bar (deletions) — downward from mid.
       if (p.dels > 0) {
-        const bh = Math.max(1.5, (p.dels / maxDels) * (h / 2 - 4));
+        const bh = Math.max(1.5, (p.dels / maxDels) * maxBarH);
         ctx.fillStyle = RED;
-        ctx.globalAlpha = 0.6;
+        ctx.globalAlpha = 0.55;
         ctx.beginPath();
-        ctx.roundRect(i * bw + 2, mid, Math.max(1, bw * 0.7), bh, 1);
+        ctx.roundRect(cx - barW / 2, mid, barW, bh, 1);
         ctx.fill();
       }
     }
@@ -67,11 +68,10 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
     ctx.beginPath();
     for (let i = 0; i < pts.length; i++) {
       const v = pts[i].count / maxC;
-      const y = mid - v * (h / 2 - 4);
+      const y = mid - v * maxBarH;
       const x = i * bw + bw / 2;
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
-    // Close the area path.
     const lastX = (pts.length - 1) * bw + bw / 2;
     ctx.lineTo(lastX, mid);
     ctx.lineTo(bw / 2, mid);
@@ -83,7 +83,7 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
     ctx.beginPath();
     for (let i = 0; i < pts.length; i++) {
       const v = pts[i].count / maxC;
-      const y = mid - v * (h / 2 - 4);
+      const y = mid - v * maxBarH;
       const x = i * bw + bw / 2;
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
@@ -91,15 +91,30 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Layer 4: viewport rectangle.
+    // Layer 4: selection band (viewport) with subtle hatch + gradient fill.
     if (scrollHeight > clientHeight) {
       const vh = Math.max(10, (clientHeight / scrollHeight) * h);
       const vy = (scrollTop / scrollHeight) * h;
-      ctx.fillStyle = "rgba(0, 145, 255, 0.10)";
+      const grad = ctx.createLinearGradient(0, vy, 0, vy + vh);
+      grad.addColorStop(0, "rgba(0,145,255,0.16)");
+      grad.addColorStop(1, "rgba(0,145,255,0.05)");
+      ctx.fillStyle = grad;
       ctx.fillRect(0, vy, w, vh);
-      ctx.strokeStyle = "rgba(0, 145, 255, 0.55)";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(0.75, vy + 0.75, w - 1.5, vh - 1.5);
+      ctx.strokeStyle = "rgba(0,145,255,0.55)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, vy + 0.5, w - 1, vh - 1);
+      // Hatch the selected interval (reference look).
+      ctx.save();
+      ctx.strokeStyle = "rgba(0,145,255,0.30)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      for (let yy = vy + 3; yy < vy + vh - 3; yy += 6) {
+        ctx.beginPath();
+        ctx.moveTo(0, yy);
+        ctx.lineTo(w, yy);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
   }, [data, scrollTop, scrollHeight, clientHeight]);
 

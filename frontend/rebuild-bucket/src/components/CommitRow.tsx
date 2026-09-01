@@ -1,4 +1,4 @@
-/** One dense commit row: graph | message+pills | author | time | sha+dots. */
+/** One dense commit row: graph | pills | message | author | right-meta (PLAN2 reference). */
 import type { CommitItem } from "../api/client";
 import GraphCanvas from "../graph/GraphCanvas";
 import RefsPills from "./RefsPills";
@@ -34,7 +34,7 @@ export default function CommitRow({
   commit, index, graphWidth, hovered, selected, query, onHover, onSelect,
 }: Props) {
   const hit = query.length > 0 && commit.message_subject.toLowerCase().includes(query.toLowerCase());
-  const laneTint = commit.node ? hexToRgba(commit.node.color, 0.10) : undefined;
+  const laneTint = commit.node ? hexToRgba(commit.node.color, 0.12) : undefined;
   return (
     <div
       className={[
@@ -50,9 +50,9 @@ export default function CommitRow({
       onClick={() => onSelect(commit.sha)}
     >
       <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
+      <div className="commit-refs-col"><RefsPills refs={commit.refs} /></div>
       <div className="commit-message">
         <span className="msg-text">{highlight(commit.message_subject, query)}</span>
-        <RefsPills refs={commit.refs} />
       </div>
       <div className="author-cell">
         <Avatar name={commit.author_name} email={commit.author_email} />

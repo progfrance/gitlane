@@ -110,7 +110,7 @@ def history(
     items = []
     for c, badges in page:
         lr = layout_by_sha.get(c.sha, {})
-        node = lr.get("node") or {"x": 24, "y": 16, "r": 5.5, "color": "#0091ff"}
+        node = lr.get("node") or {"x": 24, "y": 16, "r": 6.5, "color": "#0091ff"}
         segs = lr.get("segments") or []
         items.append(
             CommitItem(
