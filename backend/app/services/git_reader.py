@@ -60,10 +60,13 @@ def is_git_repo(path: str) -> bool:
     if not path or not os.path.isdir(path):
         return False
     try:
-        out = _run(path, ["rev-parse", "--is-inside-work-tree"], timeout=5)
-        return out.strip() == "true"
+        out = _run(path, ["rev-parse", "--show-toplevel"], timeout=5)
     except GitError:
         return False
+    # The discovered work tree must be the directory itself, not a parent
+    # repo that merely contains it.
+    toplevel = os.path.normpath(out.strip())
+    return toplevel == os.path.normpath(os.path.abspath(path))
 
 
 def repo_name(path: str) -> str:

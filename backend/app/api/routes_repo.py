@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..models.repo import OpenRepoRequest, OpenRepoResponse, RepoInfo
 from ..services import git_reader
+from ..services.lane_layout import compute_layout
 from ..services.cache import RepoState, cache
 
 router = APIRouter(tags=["repo"])
@@ -32,6 +33,16 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
     state.head_sha = refs.head_sha
     state.refs = refs
     state.commits = commits
+
+    # Global lane layout is computed once per load (stable across pagination).
+    parents_map = {c.sha: c.parents for c in commits}
+    rows, max_lane = compute_layout([c.sha for c in commits], parents_map)
+    state.layout_rows = [
+        {"sha": r.sha, "lane_index": r.lane_index, "node": r.node, "segments": r.segments}
+        for r in rows
+    ]
+    state.max_lane = max_lane
+
     cache.put(state)
 
     return OpenRepoResponse(

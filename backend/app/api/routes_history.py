@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..models.commit import CommitItem, HistoryEnvelope, RefBadge
 from ..services import git_reader
+from ..services.timeline_builder import build_timeline
 from ..services.cache import RepoState, cache
 
 router = APIRouter(tags=["history"])
@@ -105,26 +106,46 @@ def history(
 
     page = filtered[offset : offset + limit]
     has_more = offset + limit < len(filtered)
-    items = [
-        CommitItem(
-            sha=c.sha,
-            short_sha=c.sha[:7],
-            message_subject=c.subject,
-            author_name=c.author_name,
-            author_email=c.author_email,
-            author_avatar_url=None,
-            timestamp=c.timestamp,
-            relative_time=git_reader.relative_time(c.timestamp),
-            parents=c.parents,
-            refs=badges,
-            lane_index=0,
-            status_checks=_status_checks(c.sha),
+    layout_by_sha = {r["sha"]: r for r in state.layout_rows}
+    items = []
+    for c, badges in page:
+        lr = layout_by_sha.get(c.sha, {})
+        node = lr.get("node") or {"x": 24, "y": 16, "r": 4.5, "color": "#8dd3ff"}
+        segs = lr.get("segments") or []
+        items.append(
+            CommitItem(
+                sha=c.sha,
+                short_sha=c.sha[:7],
+                message_subject=c.subject,
+                author_name=c.author_name,
+                author_email=c.author_email,
+                author_avatar_url=None,
+                timestamp=c.timestamp,
+                relative_time=git_reader.relative_time(c.timestamp),
+                parents=c.parents,
+                refs=badges,
+                lane_index=lr.get("lane_index", 0),
+                node=node,
+                segments=segs,
+                status_checks=_status_checks(c.sha),
+            )
         )
-        for c, badges in page
-    ]
     return HistoryEnvelope(
         items=items,
         next_cursor=_encode_cursor(offset + limit) if has_more else None,
         has_more=has_more,
         total=len(filtered),
+        max_lane=state.max_lane,
     )
+
+
+@router.get("/timeline")
+def timeline(
+    path: str = Query(..., description="repo path previously opened"),
+    buckets: int = Query(90, ge=10, le=300),
+) -> dict:
+    try:
+        state = cache.require(path)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
+    return build_timeline([c.timestamp for c in state.commits], buckets)

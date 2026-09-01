@@ -20,7 +20,7 @@ class RepoState:
     refs: RefsData = field(default_factory=RefsData)
     commits: list[CommitData] = field(default_factory=list)
     loaded_at: float = 0.0
-    # Populated by the lane engine (phase B):
+    # Populated by the lane engine:
     layout_rows: list[dict] = field(default_factory=list)
     max_lane: int = 0
 
