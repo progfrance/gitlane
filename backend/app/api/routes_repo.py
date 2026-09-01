@@ -22,7 +22,15 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
         raise HTTPException(status_code=400, detail=f"directory not found: {path}")
     if not git_reader.is_git_repo(path):
         raise HTTPException(status_code=400, detail=f"not a git repository: {path}")
+    state = reload_state(path)
+    return OpenRepoResponse(
+        ok=True,
+        repo=RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits)),
+    )
 
+
+def reload_state(path: str) -> RepoState:
+    """(Re)read refs, commits and lane layout for an open repo."""
     try:
         refs = git_reader.read_refs(path)
         commits = git_reader.read_commits(path, ref=refs.head)
@@ -44,11 +52,7 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
     state.max_lane = max_lane
 
     cache.put(state)
-
-    return OpenRepoResponse(
-        ok=True,
-        repo=RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(commits)),
-    )
+    return state
 
 
 @router.get("/repos/current", response_model=RepoInfo | None)

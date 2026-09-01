@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { fetchHistory, fetchTimeline, openRepo, type CommitItem, type RepoInfo } from "../api/client";
+import { useRepoEvents } from "../api/events";
 import { repoStore } from "../store/useRepoStore";
 import TopToolbar from "../components/TopToolbar";
 import MiniTimeline from "../components/MiniTimeline";
-import CommitTable from "../components/CommitTable";
+import VirtualCommitTable from "../components/VirtualCommitTable";
 import { graphWidth as computeGraphWidth } from "../graph/coords";
 
 const DEFAULT_REPO = "C:/Users/Dell/Desktop/MesProjets/gitlane/gitlane";
@@ -87,12 +88,22 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Auto-refresh on window focus (light-weight v1; websocket lands in Phase D).
+  // Auto-refresh on window focus (lightweight complement to the websocket).
   useEffect(() => {
     const onFocus = () => { if (s.repoPath) void load(s.repoPath, s.query); };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [s.repoPath, s.query, load]);
+
+  // Live updates: websocket events from the .git watcher (plan §10.5).
+  useRepoEvents((ev) => {
+    const cur = repoStore.get();
+    if (!cur.repoPath) return;
+    if (ev.path && ev.path !== cur.repoPath) return;
+    if (ev.type === "repo_updated" || ev.type === "new_commit" || ev.type === "head_changed") {
+      void load(cur.repoPath, cur.query);
+    }
+  }, s.repoPath != null);
 
   const gw = useMemo(() => computeGraphWidth(s.maxLane), [s.maxLane]);
   const items: CommitItem[] = s.items;
@@ -135,8 +146,8 @@ export default function App() {
             </div>
           )}
           {items.length > 0 && (
-            <CommitTable
-              ref={scrollRef}
+            <VirtualCommitTable
+              scrollRef={scrollRef}
               items={items}
               graphWidth={gw}
               hoveredSha={s.hoveredSha}

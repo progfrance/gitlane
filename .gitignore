@@ -9,6 +9,7 @@ __pycache__/
 node_modules/
 dist/
 *.local
+tsconfig.tsbuildinfo
 
 # Editors / OS
 .vscode/

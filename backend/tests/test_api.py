@@ -116,3 +116,11 @@ class TestLayoutInHistory:
             assert item["node"]["color"] in palette
             for seg in item["segments"]:
                 assert seg["color"] in palette
+
+
+class TestEvents:
+    def test_websocket_connects(self, client):
+        with client.websocket_connect("/events") as ws:
+            # Session alive: a send must not raise (server keeps reading).
+            ws.send_text("ping")
+            assert ws.send_text("pong") is None
