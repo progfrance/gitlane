@@ -1,5 +1,5 @@
-/** One dense commit row: commit-main (graph + pills + message) | commit-meta-right.
- *  Right zone is a strict flex row with explicit gaps — no text overlap (PLAN2 fix). */
+/** One dense commit row: graph lane | content (pills + message) | right meta.
+ *  Pills are inline-flex BEFORE the message — single line, no overlap (PLAN2 fix). */
 import type { CommitItem } from "../api/client";
 import GraphCanvas from "../graph/GraphCanvas";
 import RefsPills from "./RefsPills";
@@ -50,12 +50,12 @@ export default function CommitRow({
       onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(commit.sha)}
     >
-      <div className="commit-main">
-        <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
-        <div className="commit-refs-col"><RefsPills refs={commit.refs} /></div>
-        <div className="commit-message">
+      <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
+      <div className="commit-content">
+        <RefsPills refs={commit.refs} />
+        <span className="commit-message">
           <span className="msg-text">{highlight(commit.message_subject, query)}</span>
-        </div>
+        </span>
       </div>
       <RightMeta commit={commit} remote={remote} />
     </div>

@@ -188,13 +188,12 @@ body {
 
 .commit-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;           /* children fill the 32px row height */
   height: 32px;
-  padding: 0 14px 0 0;
+  padding: 0 12px 0 0;
   cursor: default;
   position: relative;
   border-bottom: 1px solid rgba(229, 229, 234, 0.45);
-  gap: 0;
 }
 
 .commit-row.even { background-color: var(--bg-row-even); }
@@ -212,29 +211,10 @@ body {
   border-radius: 0 2px 2px 0;
 }
 
-/* Left zone: graph + pills + message — grows and truncates, never squeezes the meta. */
-.commit-main {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.commit-main .commit-graph-cell {
-  flex: 0 0 var(--graph-width, 180px);
-}
-
-.commit-main .commit-refs-col {
-  flex: 0 1 auto;
-  max-width: 130px;
-}
-
-.commit-main .commit-message {
-  flex: 1 1 auto;
-  min-width: 0;
-}
+/* ---------- graph lane (fixed width, full height — canvas fills via inset) ---------- */
 
 .commit-graph-cell {
+  flex: 0 0 var(--graph-width, 180px);
   height: 100%;
   position: relative;
 }
@@ -246,13 +226,27 @@ body {
   height: 100%;
 }
 
-/* Branch pills sit between the graph and the message. */
-.commit-refs-col {
+/* ---------- commit content: pills inline with message ---------- */
+
+.commit-content {
   display: flex;
   align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
-  padding-right: 8px;
   overflow: hidden;
+  white-space: nowrap;
+}
+
+.commit-content .refs-wrap {
+  flex: 0 1 auto;
+  overflow: hidden;
+  max-width: 45%;
+}
+
+.commit-content .commit-message {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .commit-message {
