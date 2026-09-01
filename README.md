@@ -25,14 +25,14 @@ Visualiseur Git web avec graphe de commits en **swimlanes** pastel — backend P
 servi par FastAPI. Il faut seulement Python ≥ 3.11 (miniforge/conda recommandé) et git.
 
 ```bash
-# Backend (port 8000, sert aussi le bundle frontend)
+# Backend (port 8088, sert aussi le bundle frontend)
 cd backend
 conda create -n gitlane python=3.13 -y && conda activate gitlane   # ou venv classique
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 ```
 
-Ouvrir **http://127.0.0.1:8000** — au premier lancement la page `/picker` s'affiche
+Ouvrir **http://127.0.0.1:8088** — au premier lancement la page `/picker` s'affiche
 pour choisir un dépôt ; ensuite le dernier dépôt ouvert se rouvre automatiquement.
 
 Installation hors-ligne et FAQ : voir [INSTALL.md](INSTALL.md).
@@ -95,6 +95,6 @@ frontend/
 
 ## Déploiement
 
-- Une seule origine : `uvicorn app.main:app --port 8000` sert l'API + le bundle — pas de CORS
+- Une seule origine : `uvicorn app.main:app --port 8088` sert l'API + le bundle — pas de CORS
 - Reverse-proxy possible (nginx/caddy) devant uvicorn si besoin
 - Persistance des derniers repos : `~/.gitlane_recent.json` (survit aux redémarrages)

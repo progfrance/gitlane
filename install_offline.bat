@@ -23,7 +23,7 @@ if %ERRORLEVEL% NEQ 0 (
         pip install -r requirements.txt
     )
     echo.
-    echo Lancement : "%BACKEND_DIR%\.venv\Scripts\python" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+    echo Lancement : "%BACKEND_DIR%\.venv\Scripts\python" -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 ) else (
     call conda create -n %ENV_NAME% python=3.13 -y
     call conda activate %ENV_NAME%
@@ -33,7 +33,7 @@ if %ERRORLEVEL% NEQ 0 (
         pip install -r "%BACKEND_DIR%\requirements.txt"
     )
     echo.
-    echo Lancement : conda activate %ENV_NAME% ^&^& python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+    echo Lancement : conda activate %ENV_NAME% ^&^& python -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 )
 
 endlocal

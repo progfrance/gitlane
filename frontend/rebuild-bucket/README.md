@@ -23,13 +23,13 @@ Puis on commite le nouveau `dist/`.
 - `index.html`      — point d'entrée Vite
 - `package.json`    — dépendances React 18, Vite 5, TypeScript 5
 - `package-lock.json` — verrou de versions
-- `vite.config.ts`  — proxy dev vers le backend :8000
+- `vite.config.ts`  — proxy dev vers le backend :8088
 - `tsconfig.json`   — config TypeScript
 
 ## Rappel des commandes utiles
 
 | Commande | Effet |
 |---|---|
-| `npm run dev` | Dev server Vite (port 5173, proxy vers :8000) |
+| `npm run dev` | Dev server Vite (port 5173, proxy vers :8088) |
 | `npm run build` | Compile `src/` → `dist/` (production) |
 | `npm test` | Aucun test frontend pour l'instant (tests côté pytest/backend) |

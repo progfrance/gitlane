@@ -49,10 +49,10 @@ Le script `install_offline.bat` (Windows) ou `install_offline.sh`
 
 ```bash
 cd gitlane/backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 ```
 
-Ouvrir **http://127.0.0.1:8000** :
+Ouvrir **http://127.0.0.1:8088** :
 - au premier lancement (aucun repo connu) → page **/picker** pour choisir un dépôt ;
 - ensuite → le dernier dépôt ouvert se rouvre automatiquement.
 

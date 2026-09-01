@@ -19,7 +19,7 @@ if command -v conda >/dev/null 2>&1; then
     pip install -r "$BACKEND_DIR/requirements.txt"
   fi
   echo
-  echo "Lancement : conda activate $ENV_NAME && cd $BACKEND_DIR && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+  echo "Lancement : conda activate $ENV_NAME && cd $BACKEND_DIR && python -m uvicorn app.main:app --host 127.0.0.1 --port 8088"
 else
   echo "conda not found - creating a plain venv instead."
   cd "$BACKEND_DIR"
@@ -32,5 +32,5 @@ else
     pip install -r requirements.txt
   fi
   echo
-  echo "Lancement : cd $BACKEND_DIR && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+  echo "Lancement : cd $BACKEND_DIR && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8088"
 fi

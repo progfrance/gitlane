@@ -19,7 +19,7 @@
 | `frontend/src/**` | 17 fichiers | 1 294 | React 18 + TS + Canvas 2D (vite) |
 | `frontend/dist/**` | 2 fichiers | ~155 KB JS + 6 KB CSS | **Build statique déjà compilé** |
 | `frontend/package.json` + `package-lock.json` | 2 | 530+ | React, Vite, TypeScript, esbuild |
-| `frontend/vite.config.ts` | 1 | 18 | Proxy `/repos /history /refs /api /events` vers `:8000` |
+| `frontend/vite.config.ts` | 1 | 18 | Proxy `/repos /history /refs /api /events` vers `:8088` |
 
 **Total source utile** : ~1 437 LOC Python + ~1 294 LOC TS/TSX/CSS.
 
@@ -28,7 +28,7 @@
 Toute la chaîne npm tient en **2 maillons** :
 
 1. **Build** : `tsc -b && vite build` → produit `frontend/dist/index.html + assets/`.
-2. **Dev server** : `vite` (port 5173) avec proxy vers FastAPI (port 8000).
+2. **Dev server** : `vite` (port 5173) avec proxy vers FastAPI (port 8088).
 
 **Aucun de ces deux n'est indispensable** :
 - Le build est déjà matérialisé sur disque (`frontend/dist/index-BZLGn9vk.js`, `index-D_9L7Hs1.css`).
@@ -118,8 +118,8 @@ conda activate gitlane
 pip install -r requirements.txt
 
 # 3. Lancer
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-# → ouvrir http://127.0.0.1:8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8088
+# → ouvrir http://127.0.0.1:8088
 ```
 
 Si l'ordinateur cible est **strictement offline**, on peut :
@@ -196,7 +196,7 @@ Le bundle est **gelé** par principe (cf. §2.2). Pour ajouter la feature sans r
 
 ### 3.4 Workflow utilisateur cible
 
-1. L'utilisateur ouvre `http://127.0.0.1:8000/`.
+1. L'utilisateur ouvre `http://127.0.0.1:8088/`.
 2. Si aucun repo n'est ouvert → FastAPI redirige vers `/repos.html` (page picker).
 3. La page picker affiche :
    - **Récents** (jusqu'à 10) cliquables.
@@ -280,7 +280,7 @@ Le bundle est **gelé** par principe (cf. §2.2). Pour ajouter la feature sans r
 
 ### Phase 6 — vérifications (30 min)
 - [ ] `pytest -q` → 11 + 12 + ~6 nouveaux tests = vert.
-- [ ] Lancer `uvicorn`, ouvrir `http://127.0.0.1:8000/` → picker → sélection → graphe rendu.
+- [ ] Lancer `uvicorn`, ouvrir `http://127.0.0.1:8088/` → picker → sélection → graphe rendu.
 - [ ] Changer de repo en cours de session → refresh → nouveau graphe.
 - [ ] Tuer / relancer uvicorn → derniers repos toujours dans `/repos/recent`.
 
