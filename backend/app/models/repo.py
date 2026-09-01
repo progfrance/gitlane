@@ -13,6 +13,7 @@ class RepoInfo(BaseModel):
     path: str
     head: str
     commit_count: int = 0
+    remote: str | None = None
 
 
 class OpenRepoResponse(BaseModel):

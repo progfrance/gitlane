@@ -26,7 +26,13 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
     recent.add_recent(path)
     return OpenRepoResponse(
         ok=True,
-        repo=RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits)),
+        repo=RepoInfo(
+            name=state.name,
+            path=state.path,
+            head=state.head,
+            commit_count=len(state.commits),
+            remote=git_reader.read_remote(path),
+        ),
     )
 
 
@@ -61,13 +67,19 @@ def current_repo() -> RepoInfo | None:
     paths = cache.all_paths()
     if paths:
         state = cache.require(paths[-1])
-        return RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits))
+        return RepoInfo(
+            name=state.name, path=state.path, head=state.head,
+            commit_count=len(state.commits), remote=git_reader.read_remote(state.path),
+        )
     # Cold start: reopen the most recently opened repo from persistence.
     last = recent.last_repo()
     if last and os.path.isdir(last) and git_reader.is_git_repo(last):
         try:
             state = reload_state(last)
-            return RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits))
+            return RepoInfo(
+                name=state.name, path=state.path, head=state.head,
+                commit_count=len(state.commits), remote=git_reader.read_remote(state.path),
+            )
         except HTTPException:
             return None
     return None

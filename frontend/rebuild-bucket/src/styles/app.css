@@ -187,14 +187,14 @@ body {
 /* ---------- commit rows (swimlane tint comes from inline background-color) ---------- */
 
 .commit-row {
-  display: grid;
-  grid-template-columns: var(--graph-width, 180px) 128px minmax(240px, 1fr) 170px 230px;
+  display: flex;
   align-items: center;
   height: 32px;
   padding: 0 14px 0 0;
   cursor: default;
   position: relative;
   border-bottom: 1px solid rgba(229, 229, 234, 0.45);
+  gap: 0;
 }
 
 .commit-row.even { background-color: var(--bg-row-even); }
@@ -212,6 +212,28 @@ body {
   border-radius: 0 2px 2px 0;
 }
 
+/* Left zone: graph + pills + message — grows and truncates, never squeezes the meta. */
+.commit-main {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.commit-main .commit-graph-cell {
+  flex: 0 0 var(--graph-width, 180px);
+}
+
+.commit-main .commit-refs-col {
+  flex: 0 1 auto;
+  max-width: 130px;
+}
+
+.commit-main .commit-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .commit-graph-cell {
   height: 100%;
   position: relative;
@@ -224,7 +246,7 @@ body {
   height: 100%;
 }
 
-/* Branch pills sit in their own column, between the graph and the message. */
+/* Branch pills sit between the graph and the message. */
 .commit-refs-col {
   display: flex;
   align-items: center;
@@ -312,16 +334,7 @@ body {
   margin-right: 3px;
 }
 
-/* ---------- author avatar ---------- */
-
-.author-cell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-  padding-right: 4px;
-}
+/* ---------- right meta (author | date | sha | diff) — strict flex, no overlap ---------- */
 
 .avatar {
   width: 16px;
@@ -339,7 +352,26 @@ body {
   overflow: hidden;
 }
 
-.author-name {
+.commit-meta-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  gap: 14px;
+  white-space: nowrap;
+  min-width: 0;
+  padding-left: 16px;
+}
+
+.commit-author {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 150px;
+}
+
+.commit-author .author-name {
   font-size: 11.5px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -347,28 +379,29 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ---------- right meta ---------- */
-
-.right-meta {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  white-space: nowrap;
-}
-
-.rel-time {
+.commit-date {
   font-size: 11.5px;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
-.sha {
+.commit-sha {
   font-size: 11px;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  min-width: 52px;
+  white-space: nowrap;
+  min-width: 54px;
   text-align: right;
+}
+
+.commit-sha a {
+  color: var(--info);
+  text-decoration: none;
+  border-bottom: 1px dotted transparent;
+}
+
+.commit-sha a:hover {
+  text-decoration: underline;
+  color: #0077d6;
 }
 
 .diff-stat {

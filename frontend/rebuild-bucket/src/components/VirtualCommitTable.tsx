@@ -15,6 +15,7 @@ const LOAD_MORE_EDGE = 400; // px from bottom to trigger the next page
 interface Props {
   items: CommitItem[];
   graphWidth: number;
+  remote: string | null;
   hoveredSha: string | null;
   selectedSha: string | null;
   query: string;
@@ -28,7 +29,7 @@ interface Props {
 }
 
 export default function VirtualCommitTable({
-  items, graphWidth, hoveredSha, selectedSha, query,
+  items, graphWidth, remote, hoveredSha, selectedSha, query,
   hasMore, loadingMore, onLoadMore, onHover, onSelect, onScroll, scrollRef,
 }: Props) {
   const [range, setRange] = useState({ start: 0, end: Math.min(items.length, 40) });
@@ -95,6 +96,7 @@ export default function VirtualCommitTable({
               commit={c}
               index={range.start + i}
               graphWidth={graphWidth}
+              remote={remote}
               hovered={hoveredSha === c.sha}
               selected={selectedSha === c.sha}
               query={query}

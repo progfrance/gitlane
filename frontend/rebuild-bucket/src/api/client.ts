@@ -50,6 +50,7 @@ export interface RepoInfo {
   path: string;
   head: string;
   commit_count: number;
+  remote: string | null;
 }
 
 export interface RefsResponse {

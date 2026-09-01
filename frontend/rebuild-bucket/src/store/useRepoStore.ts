@@ -2,7 +2,7 @@
 
 export interface RepoState {
   repoPath: string | null;
-  repo: { name: string; path: string; head: string; commit_count: number } | null;
+  repo: { name: string; path: string; head: string; commit_count: number; remote: string | null } | null;
   items: import("../api/client").CommitItem[];
   total: number;
   maxLane: number;

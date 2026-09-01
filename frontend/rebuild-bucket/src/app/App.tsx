@@ -187,6 +187,7 @@ export default function App() {
               scrollRef={scrollRef}
               items={items}
               graphWidth={gw}
+              remote={s.repo?.remote ?? null}
               hoveredSha={s.hoveredSha}
               selectedSha={s.selectedSha}
               query={s.query}

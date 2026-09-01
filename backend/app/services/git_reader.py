@@ -220,3 +220,27 @@ def relative_time(timestamp: int, now: int | None = None) -> str:
         return f"{months} month{'s' if months != 1 else ''} ago"
     years = days // 365
     return f"{years} year{'s' if years != 1 else ''} ago"
+
+
+def read_remote(repo_path: str) -> str | None:
+    """Return a web URL base for the repo's origin remote (GitHub only).
+
+    Handles https, git@ and ssh:// forms:
+      https://github.com/owner/repo.git  -> https://github.com/owner/repo
+      git@github.com:owner/repo.git      -> https://github.com/owner/repo
+      ssh://git@github.com/owner/repo.git-> https://github.com/owner/repo
+    Returns None when no origin remote or not a GitHub URL.
+    """
+    import re
+
+    try:
+        url = _run(repo_path, ["config", "--get", "remote.origin.url"], timeout=5).strip()
+    except GitError:
+        return None
+    if not url:
+        return None
+    m = re.match(r"(?:https?://|git@|ssh://git@)github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?$", url)
+    if not m:
+        return None
+    owner, repo = m.group(1), m.group(2)
+    return f"https://github.com/{owner}/{repo}"

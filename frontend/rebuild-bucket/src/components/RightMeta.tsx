@@ -1,13 +1,31 @@
-/** Right column: relative time, short SHA, GitHub-style diff stat (+N -M + 5 squares). */
+/** Right metadata zone: author | date | SHA (GitHub link) | diff stat (+N -M + squares).
+ *  Strict flex row with fixed gaps — no text overlap (PLAN2 fix). */
 import type { CommitItem } from "../api/client";
+import Avatar from "./Avatar";
 
-export default function RightMeta({ commit }: { commit: CommitItem }) {
+interface Props {
+  commit: CommitItem;
+  remote: string | null;
+}
+
+export default function RightMeta({ commit, remote }: Props) {
   const adds = commit.additions ?? 0;
   const dels = commit.deletions ?? 0;
+  const shaUrl = remote ? `${remote}/commit/${commit.sha}` : null;
   return (
-    <div className="right-meta">
-      <span className="rel-time">{commit.relative_time}</span>
-      <span className="sha mono">{commit.short_sha}</span>
+    <div className="commit-meta-right">
+      <div className="commit-author" title={commit.author_name}>
+        <Avatar name={commit.author_name} email={commit.author_email} />
+        <span className="author-name">{commit.author_name}</span>
+      </div>
+      <span className="commit-date">{commit.relative_time}</span>
+      <span className="commit-sha mono">
+        {shaUrl ? (
+          <a href={shaUrl} target="_blank" rel="noopener noreferrer">{commit.short_sha}</a>
+        ) : (
+          commit.short_sha
+        )}
+      </span>
       {(adds > 0 || dels > 0) && <DiffStat adds={adds} dels={dels} />}
     </div>
   );

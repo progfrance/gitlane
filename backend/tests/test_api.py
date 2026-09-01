@@ -35,6 +35,13 @@ class TestOpenRepo:
         assert body["repo"]["name"] == git_repo.name
         assert body["repo"]["commit_count"] >= 1
 
+    def test_open_exposes_remote_url(self, client, git_repo):
+        # A repo without a GitHub origin gets remote=None (not an error).
+        r = client.post("/repos/open", json={"path": str(git_repo)})
+        assert r.status_code == 200
+        assert "remote" in r.json()["repo"]
+        assert r.json()["repo"]["remote"] is None
+
     def test_open_rejects_missing_dir(self, client, tmp_path):
         r = client.post("/repos/open", json={"path": str(tmp_path / "nope")})
         assert r.status_code == 400
@@ -116,6 +123,52 @@ class TestLayoutInHistory:
             assert item["node"]["color"] in palette
             for seg in item["segments"]:
                 assert seg["color"] in palette
+
+
+class TestGitReaderRemote:
+    def test_read_remote_parses_github_urls(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+
+        def fake_run(path, args, timeout=15):
+            assert args[:2] == ["config", "--get"]
+            return "git@github.com:progfrance/gitlane.git\n"
+
+        monkeypatch.setattr(git_reader, "_run", fake_run)
+        assert git_reader.read_remote(str(repo)) == "https://github.com/progfrance/gitlane"
+
+    def test_read_remote_https_and_git_suffix(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+        monkeypatch.setattr(
+            git_reader, "_run",
+            lambda path, args, timeout=15: "https://github.com/owner/repo.git\n",
+        )
+        assert git_reader.read_remote(str(repo)) == "https://github.com/owner/repo"
+
+    def test_read_remote_non_github_is_none(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+        monkeypatch.setattr(
+            git_reader, "_run",
+            lambda path, args, timeout=15: "git@gitlab.com:owner/repo.git\n",
+        )
+        assert git_reader.read_remote(str(repo)) is None
+
+    def test_read_remote_missing_remote_is_none(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+        from app.services.git_reader import GitError
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+        monkeypatch.setattr(git_reader, "_run", lambda path, args, timeout=15: (_ for _ in ()).throw(GitError("no remote")))
+        assert git_reader.read_remote(str(repo)) is None
 
 
 class TestEvents:

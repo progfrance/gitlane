@@ -1,8 +1,8 @@
-/** One dense commit row: graph | pills | message | author | right-meta (PLAN2 reference). */
+/** One dense commit row: commit-main (graph + pills + message) | commit-meta-right.
+ *  Right zone is a strict flex row with explicit gaps — no text overlap (PLAN2 fix). */
 import type { CommitItem } from "../api/client";
 import GraphCanvas from "../graph/GraphCanvas";
 import RefsPills from "./RefsPills";
-import Avatar from "./Avatar";
 import RightMeta from "./RightMeta";
 import { hexToRgba } from "../graph/coords";
 
@@ -10,6 +10,7 @@ interface Props {
   commit: CommitItem;
   index: number;
   graphWidth: number;
+  remote: string | null;
   hovered: boolean;
   selected: boolean;
   query: string;
@@ -31,7 +32,7 @@ function highlight(text: string, q: string) {
 }
 
 export default function CommitRow({
-  commit, index, graphWidth, hovered, selected, query, onHover, onSelect,
+  commit, index, graphWidth, remote, hovered, selected, query, onHover, onSelect,
 }: Props) {
   const hit = query.length > 0 && commit.message_subject.toLowerCase().includes(query.toLowerCase());
   const laneTint = commit.node ? hexToRgba(commit.node.color, 0.12) : undefined;
@@ -49,16 +50,14 @@ export default function CommitRow({
       onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(commit.sha)}
     >
-      <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
-      <div className="commit-refs-col"><RefsPills refs={commit.refs} /></div>
-      <div className="commit-message">
-        <span className="msg-text">{highlight(commit.message_subject, query)}</span>
+      <div className="commit-main">
+        <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
+        <div className="commit-refs-col"><RefsPills refs={commit.refs} /></div>
+        <div className="commit-message">
+          <span className="msg-text">{highlight(commit.message_subject, query)}</span>
+        </div>
       </div>
-      <div className="author-cell">
-        <Avatar name={commit.author_name} email={commit.author_email} />
-        <span className="author-name">{commit.author_name}</span>
-      </div>
-      <RightMeta commit={commit} />
+      <RightMeta commit={commit} remote={remote} />
     </div>
   );
 }
