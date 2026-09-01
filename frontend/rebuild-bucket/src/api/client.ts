@@ -88,6 +88,14 @@ export async function openRepo(path: string): Promise<RepoInfo> {
   return body.repo;
 }
 
+export async function fetchCurrentRepo(): Promise<RepoInfo | null> {
+  const res = await fetch("/repos/current");
+  if (!res.ok) return null;
+  const body = await res.json();
+  if (!body || !body.path) return null;
+  return body as RepoInfo;
+}
+
 export async function fetchHistory(
   path: string,
   opts: { limit?: number; q?: string } = {}

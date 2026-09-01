@@ -1,7 +1,7 @@
 /** GitLane app shell: toolbar + mini timeline + commit table (PLAN sections 2 & 4). */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { fetchHistory, fetchTimeline, openRepo, type CommitItem } from "../api/client";
+import { fetchCurrentRepo, fetchHistory, fetchTimeline, openRepo, type CommitItem } from "../api/client";
 import { useRepoEvents } from "../api/events";
 import { repoStore } from "../store/useRepoStore";
 import TopToolbar from "../components/TopToolbar";
@@ -57,8 +57,14 @@ export default function App() {
     }
   }, [s.repoPath]);
 
-  // Initial load.
-  useEffect(() => { void load(DEFAULT_REPO, ""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Initial load: prefer the repo already open server-side (picker / last
+  // session), fall back to DEFAULT_REPO only when nothing is open.
+  useEffect(() => {
+    (async () => {
+      const current = await fetchCurrentRepo();
+      void load(current?.path ?? DEFAULT_REPO, "");
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search (100-150 ms per plan §11).
   useEffect(() => {
