@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, HTTPException
 
 from ..models.repo import OpenRepoRequest, OpenRepoResponse, RepoInfo
-from ..services import git_reader
+from ..services import git_reader, recent
 from ..services.lane_layout import compute_layout
 from ..services.cache import RepoState, cache
 
@@ -23,6 +23,7 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
     if not git_reader.is_git_repo(path):
         raise HTTPException(status_code=400, detail=f"not a git repository: {path}")
     state = reload_state(path)
+    recent.add_recent(path)
     return OpenRepoResponse(
         ok=True,
         repo=RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits)),
@@ -33,7 +34,7 @@ def reload_state(path: str) -> RepoState:
     """(Re)read refs, commits and lane layout for an open repo."""
     try:
         refs = git_reader.read_refs(path)
-        commits = git_reader.read_commits(path, ref=refs.head)
+        commits = git_reader.read_commits(path, ref=refs.head, with_stats=True)
     except git_reader.GitError as exc:
         raise HTTPException(status_code=500, detail=f"git error: {exc}") from exc
 
@@ -58,7 +59,15 @@ def reload_state(path: str) -> RepoState:
 @router.get("/repos/current", response_model=RepoInfo | None)
 def current_repo() -> RepoInfo | None:
     paths = cache.all_paths()
-    if not paths:
-        return None
-    state = cache.require(paths[-1])
-    return RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits))
+    if paths:
+        state = cache.require(paths[-1])
+        return RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits))
+    # Cold start: reopen the most recently opened repo from persistence.
+    last = recent.last_repo()
+    if last and os.path.isdir(last) and git_reader.is_git_repo(last):
+        try:
+            state = reload_state(last)
+            return RepoInfo(name=state.name, path=state.path, head=state.head, commit_count=len(state.commits))
+        except HTTPException:
+            return None
+    return None

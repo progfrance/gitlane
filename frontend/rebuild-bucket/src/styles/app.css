@@ -10,13 +10,13 @@ html, body, #root {
 body {
   background: var(--bg-app);
   color: var(--text-main);
-  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
 
 .mono {
-  font-family: "JetBrains Mono", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ---------- shell ---------- */
@@ -173,7 +173,7 @@ body {
   position: relative;
 }
 
-/* ---------- commit rows ---------- */
+/* ---------- commit rows (swimlane tint comes from inline background-color) ---------- */
 
 .commit-row {
   display: grid;
@@ -183,11 +183,12 @@ body {
   padding: 0 12px 0 0;
   cursor: default;
   position: relative;
+  border-bottom: 1px solid rgba(229, 229, 234, 0.45);
 }
 
-.commit-row.even { background: var(--bg-row-even); }
-.commit-row:hover { background: var(--bg-row-hover); }
-.commit-row.selected { background: var(--bg-row-selected); }
+.commit-row.even { background-color: var(--bg-row-even); }
+.commit-row:hover { background-image: linear-gradient(rgba(238, 243, 251, 0.55), rgba(238, 243, 251, 0.55)); }
+.commit-row.selected { background-image: linear-gradient(rgba(226, 239, 255, 0.7), rgba(226, 239, 255, 0.7)); }
 
 .commit-row.selected::before {
   content: "";
@@ -254,30 +255,31 @@ body {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 1px 8px;
   border: 1px solid;
   font-size: 10.5px;
   font-weight: 600;
   white-space: nowrap;
-  line-height: 1.3;
+  line-height: 1.4;
+  gap: 2px;
 }
 
 .ref-pill.local {
-  background: #e8f9ee;
+  background: #eaf7ef;
   border-color: #bfeacf;
-  color: #15803d;
+  color: #16713c;
 }
 
 .ref-pill.remote {
-  background: #e8f2ff;
+  background: #eaf4ff;
   border-color: #c4dcfc;
-  color: #1d4ed8;
+  color: #1769d2;
 }
 
 .ref-pill.tag {
-  background: #fff4e0;
-  border-color: #f8ddb0;
-  color: #b45309;
+  background: #fef7e0;
+  border-color: #f5dd9b;
+  color: #a16508;
 }
 
 .ref-pill.head {
@@ -291,7 +293,7 @@ body {
   height: 5px;
   border-radius: 50%;
   background: var(--info);
-  margin-right: 4px;
+  margin-right: 3px;
 }
 
 /* ---------- author avatar ---------- */
@@ -346,6 +348,34 @@ body {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+.diff-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.diff-num.add { color: var(--ok); }
+.diff-num.del { color: var(--fail); }
+
+.diff-squares {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.diff-square {
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+}
+
+.diff-square.add { background: var(--ok); }
+.diff-square.del { background: var(--fail); }
 
 .status-dots {
   display: inline-flex;

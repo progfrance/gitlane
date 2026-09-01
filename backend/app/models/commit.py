@@ -26,6 +26,9 @@ class CommitItem(BaseModel):
     node: NodeGeom | None = None
     segments: list[SegmentGeom] = []
     status_checks: list[str] = []
+    additions: int = 0
+    deletions: int = 0
+    is_head: bool = False
 
 
 class HistoryEnvelope(BaseModel):

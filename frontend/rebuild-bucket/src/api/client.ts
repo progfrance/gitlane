@@ -32,6 +32,9 @@ export interface CommitItem {
   node: NodeGeom | null;
   segments: SegmentGeom[];
   status_checks: string[];
+  additions: number;
+  deletions: number;
+  is_head: boolean;
 }
 
 export interface HistoryEnvelope {
@@ -60,7 +63,7 @@ export interface RefsResponse {
 export interface TimelineData {
   t_min: number | null;
   t_max: number | null;
-  points: { t: number; count: number }[];
+  points: { t: number; count: number; adds: number; dels: number }[];
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {

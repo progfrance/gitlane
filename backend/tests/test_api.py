@@ -109,8 +109,8 @@ class TestLayoutInHistory:
     def test_lane_colors_valid(self, opened, client):
         r = client.get("/history", params={"path": opened, "limit": 50})
         palette = {
-            "#f79ac0", "#8dd3ff", "#9ee6b5", "#ffd48a", "#c3b6ff", "#ffb2a6",
-            "#94e2d5", "#b7e48a", "#f6b0e5", "#a0c4ff", "#ffd6a5", "#caffbf",
+            "#d6409f", "#8e4ec6", "#0091ff", "#00a2c7", "#f5a623", "#30a46c",
+            "#e5484d", "#6e56cf", "#12b5cb", "#e2b714", "#3eb8b3", "#7ee787",
         }
         for item in r.json()["items"]:
             assert item["node"]["color"] in palette

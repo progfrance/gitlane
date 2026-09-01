@@ -27,6 +27,8 @@ class CommitData:
     timestamp: int = 0
     subject: str = ""
     decorations: list[str] = field(default_factory=list)
+    additions: int = 0
+    deletions: int = 0
 
 
 @dataclass
@@ -98,7 +100,10 @@ def read_refs(repo_path: str) -> RefsData:
     return data
 
 
-def read_commits(repo_path: str, ref: str = "HEAD", max_count: int | None = None) -> list[CommitData]:
+def read_commits(
+    repo_path: str, ref: str = "HEAD", max_count: int | None = None,
+    with_stats: bool = False,
+) -> list[CommitData]:
     """Read the full history of `ref` in topological order (children first)."""
     args = ["log", "--topo-order", f"--format={_LOG_FORMAT}"]
     if max_count:
@@ -134,7 +139,49 @@ def read_commits(repo_path: str, ref: str = "HEAD", max_count: int | None = None
                 decorations=decorations,
             )
         )
+
+    if with_stats and commits:
+        stats = _read_diff_stats(repo_path, ref, max_count)
+        for c in commits:
+            a, d = stats.get(c.sha, (0, 0))
+            c.additions, c.deletions = a, d
+
     return commits
+
+
+def _read_diff_stats(
+    repo_path: str, ref: str, max_count: int | None,
+) -> dict[str, tuple[int, int]]:
+    """Fetch per-commit line additions/deletions via --numstat."""
+    import re
+    args = ["log", "--numstat", "--format=%H"]
+    if max_count:
+        args.append(f"--max-count={max_count}")
+    args.append(_sanitize_rev(ref))
+    args.append("--")
+    out = _run(repo_path, args)
+
+    SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+    cur: str | None = None
+    acc: dict[str, list[int]] = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if SHA_RE.match(line):
+            cur = line
+            if cur not in acc:
+                acc[cur] = [0, 0]
+            continue
+        if cur is None:
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            adds, dels = parts[0], parts[1]
+            if adds.isdigit() and dels.isdigit():
+                acc[cur][0] += int(adds)
+                acc[cur][1] += int(dels)
+    return {sha: (a, d) for sha, (a, d) in acc.items()}
 
 
 def _is_valid_ref(ref: str) -> bool:

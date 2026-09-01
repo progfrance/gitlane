@@ -9,7 +9,7 @@ import MiniTimeline from "../components/MiniTimeline";
 import VirtualCommitTable from "../components/VirtualCommitTable";
 import { graphWidth as computeGraphWidth } from "../graph/coords";
 
-const DEFAULT_REPO = "C:/Users/Dell/Desktop/MesProjets/gitlane/gitlane";
+const DEFAULT_REPO = "C:/Users/Dell/Desktop/MesProjets/gitlane";
 
 function useStore() {
   return useSyncExternalStore(repoStore.subscribe, repoStore.get);

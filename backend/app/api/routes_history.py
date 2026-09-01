@@ -110,7 +110,7 @@ def history(
     items = []
     for c, badges in page:
         lr = layout_by_sha.get(c.sha, {})
-        node = lr.get("node") or {"x": 24, "y": 16, "r": 4.5, "color": "#8dd3ff"}
+        node = lr.get("node") or {"x": 24, "y": 16, "r": 5.5, "color": "#0091ff"}
         segs = lr.get("segments") or []
         items.append(
             CommitItem(
@@ -128,6 +128,9 @@ def history(
                 node=node,
                 segments=segs,
                 status_checks=_status_checks(c.sha),
+                additions=c.additions,
+                deletions=c.deletions,
+                is_head=c.sha == state.head_sha,
             )
         )
     return HistoryEnvelope(
@@ -148,4 +151,8 @@ def timeline(
         state = cache.require(path)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
-    return build_timeline([c.timestamp for c in state.commits], buckets)
+    return build_timeline(
+        [c.timestamp for c in state.commits], buckets,
+        additions=[c.additions for c in state.commits],
+        deletions=[c.deletions for c in state.commits],
+    )

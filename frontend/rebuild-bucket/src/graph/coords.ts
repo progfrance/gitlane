@@ -3,9 +3,16 @@
 export const ROW_HEIGHT = 32;
 export const NODE_Y = 16;
 export const LANE_GAP = 20;
-export const NODE_R = 4.5;
+export const NODE_R = 5.5;
 export const FIRST_LANE_X = 24;
 
 export function graphWidth(maxLane: number): number {
   return Math.max(120, Math.ceil(FIRST_LANE_X + (maxLane + 1) * LANE_GAP + 12));
+}
+
+/** Convert hex color to rgba string with alpha. */
+export function hexToRgba(hex: string, alpha = 1): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return hex;
+  return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
 }

@@ -1,6 +1,6 @@
 /** 16px author avatar with initials fallback (PLAN.md section 4.5). */
 
-const PALETTE = ["#f79ac0", "#8dd3ff", "#9ee6b5", "#ffd48a", "#c3b6ff", "#ffb2a6", "#94e2d5", "#b7e48a"];
+const PALETTE = ["#d6409f", "#8e4ec6", "#0091ff", "#00a2c7", "#f5a623", "#30a46c", "#e5484d", "#6e56cf"];
 
 export function avatarColor(email: string): string {
   let h = 0;

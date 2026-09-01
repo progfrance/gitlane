@@ -31,13 +31,15 @@ from dataclasses import dataclass, field
 ROW_HEIGHT = 32.0
 NODE_Y = ROW_HEIGHT / 2.0
 LANE_GAP = 20.0
-NODE_R = 4.5
+NODE_R = 5.5
 LINE_W = 2.0
 FIRST_LANE_X = 24.0
 
+# Premium accent palette (GitKraken-like): 6 base hues from the reference
+# capture, each with a slightly lighter variant for lane variety.
 LANE_COLORS = [
-    "#f79ac0", "#8dd3ff", "#9ee6b5", "#ffd48a", "#c3b6ff", "#ffb2a6",
-    "#94e2d5", "#b7e48a", "#f6b0e5", "#a0c4ff", "#ffd6a5", "#caffbf",
+    "#d6409f", "#8e4ec6", "#0091ff", "#00a2c7", "#f5a623", "#30a46c",
+    "#e5484d", "#6e56cf", "#12b5cb", "#e2b714", "#3eb8b3", "#7ee787",
 ]
 
 

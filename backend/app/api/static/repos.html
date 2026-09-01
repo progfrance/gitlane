@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GitLane — choisir un dépôt</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f2f2f7;
+    color: #1c1c1e;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 40px 16px 60px;
+  }
+  .card {
+    width: min(760px, 100%);
+    background: #fff;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(16, 24, 40, .06);
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h1 .logo {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: linear-gradient(135deg, #d6409f, #0091ff);
+    display: inline-block;
+  }
+  .subtitle { color: #8e8e93; font-size: 13px; margin: 0 0 18px; }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: #8e8e93; margin: 18px 0 8px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .row:hover { background: #eef3fb; border-color: #e5e5ea; }
+  .row .name { font-weight: 600; font-size: 13.5px; }
+  .row .path { color: #8e8e93; font-size: 12px; font-family: Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .btn { margin-left: auto; }
+  .empty { color: #8e8e93; font-size: 13px; padding: 10px; text-align: center; }
+  input[type="text"], select {
+    height: 32px; border: 1px solid #e5e5ea; border-radius: 8px;
+    padding: 0 10px; font-size: 13px; width: 100%;
+    outline: none; font-family: inherit;
+  }
+  input:focus, select:focus { border-color: #0091ff; }
+  button {
+    height: 32px; padding: 0 14px; border-radius: 8px;
+    border: 1px solid #e5e5ea; background: #fff;
+    font-size: 13px; font-weight: 600; cursor: pointer; color: #1c1c1e;
+  }
+  button:hover { background: #eef3fb; }
+  button.primary { background: #0091ff; border-color: #0091ff; color: #fff; }
+  button.primary:hover { background: #0077d6; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row .btn { background: transparent; border-color: transparent; color: #0091ff; }
+  .row:hover .btn { border-color: #c4dcfc; background: #fff; }
+  .formline { display: flex; gap: 8px; }
+  .formline input { flex: 1; }
+  .scan-results { margin-top: 10px; border: 1px solid #e5e5ea; border-radius: 8px; max-height: 260px; overflow: auto; }
+  .scan-results .row .btn { display: none; }
+  .scan-results .row:hover .btn { display: inline-flex; }
+  .err { color: #e54d2e; font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .hint { color: #8e8e93; font-size: 12px; margin-top: 6px; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #e5e5ea; border-top-color: #0091ff;
+    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="logo"></span> GitLane</h1>
+    <p class="subtitle">Choisir un dépôt Git à visualiser</p>
+
+    <h2>Récents</h2>
+    <div id="recents"><div class="empty">Chargement…</div></div>
+
+    <h2>Parcourir</h2>
+    <div class="formline">
+      <input id="root" type="text" placeholder="Dossier racine (absolu), ex : C:\Users\Dell\Desktop\MesProjets" />
+      <select id="depth">
+        <option value="1">1 niveau</option>
+        <option value="2">2 niveaux</option>
+        <option value="3">3 niveaux</option>
+      </select>
+      <button id="scanBtn">Scanner</button>
+    </div>
+    <div class="scan-results" id="scanResults" hidden></div>
+    <div class="hint">Ne scanne que les dossiers contenant un sous-dossier <code>.git</code> — profondeur limitée.</div>
+
+    <h2>Manuel</h2>
+    <div class="formline">
+      <input id="manual" type="text" placeholder="Chemin absolu d'un dépôt git" />
+      <button id="openBtn" class="primary">Ouvrir</button>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const $err = $("err");
+
+function showError(msg) {
+  $err.textContent = msg || "";
+}
+
+async function openPath(path) {
+  showError("");
+  const btn = $("openBtn");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/repos/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      showError(body.detail || `Erreur ${res.status}`);
+      return;
+    }
+    window.location.href = "/";
+  } catch (e) {
+    showError(String(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderRecents(items) {
+  const box = $("recents");
+  if (!items.length) {
+    box.innerHTML = '<div class="empty">Aucun dépôt ouvert récemment.</div>';
+    return;
+  }
+  box.innerHTML = "";
+  for (const it of items) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">Ouvrir</button>`;
+    row.querySelector(".name").textContent = it.name || "?";
+    row.querySelector(".path").textContent = it.path;
+    row.querySelector(".btn").addEventListener("click", (e) => { e.stopPropagation(); openPath(it.path); });
+    row.addEventListener("click", () => openPath(it.path));
+    box.appendChild(row);
+  }
+}
+
+async function loadRecents() {
+  try {
+    const res = await fetch("/repos/recent");
+    renderRecents(await res.json());
+  } catch (e) {
+    renderRecents([]);
+  }
+}
+
+$("scanBtn").addEventListener("click", async () => {
+  const root = $("root").value.trim();
+  const depth = parseInt($("depth").value, 10) || 1;
+  const box = $("scanResults");
+  const btn = $("scanBtn");
+  showError("");
+  if (!root) { showError("Indique un dossier racine."); return; }
+  btn.disabled = true;
+  box.hidden = false;
+  box.innerHTML = '<div class="empty"><span class="spinner"></span> Scan en cours…</div>';
+  try {
+    const res = await fetch(`/repos/browse?root=${encodeURIComponent(root)}&depth=${depth}`);
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) {
+      box.innerHTML = '<div class="empty">Aucun dépôt git trouvé ici.</div>';
+      return;
+    }
+    box.innerHTML = "";
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">Ouvrir</button>`;
+      row.querySelector(".name").textContent = it.name;
+      row.querySelector(".path").textContent = it.path;
+      row.querySelector(".btn").addEventListener("click", (e) => { e.stopPropagation(); openPath(it.path); });
+      row.addEventListener("click", () => openPath(it.path));
+      box.appendChild(row);
+    }
+  } catch (e) {
+    box.innerHTML = '<div class="empty">Erreur pendant le scan.</div>';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("openBtn").addEventListener("click", () => {
+  const path = $("manual").value.trim();
+  if (!path) { showError("Indique un chemin absolu."); return; }
+  openPath(path);
+});
+$("manual").addEventListener("keydown", (e) => { if (e.key === "Enter") $("openBtn").click(); });
+$("root").addEventListener("keydown", (e) => { if (e.key === "Enter") $("scanBtn").click(); });
+
+loadRecents();
+</script>
+</body>
+</html>

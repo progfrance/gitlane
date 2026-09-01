@@ -7,6 +7,13 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_recent(tmp_path, monkeypatch):
+    """Point the recent-repos file at a temp path so tests never touch ~/."""
+    from app.services import recent
+    monkeypatch.setattr(recent, "RECENT_FILE", str(tmp_path / "recent.json"))
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
         ["git", "-C", str(repo), *args],

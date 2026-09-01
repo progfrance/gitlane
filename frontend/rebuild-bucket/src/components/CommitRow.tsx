@@ -4,6 +4,7 @@ import GraphCanvas from "../graph/GraphCanvas";
 import RefsPills from "./RefsPills";
 import Avatar from "./Avatar";
 import RightMeta from "./RightMeta";
+import { hexToRgba } from "../graph/coords";
 
 interface Props {
   commit: CommitItem;
@@ -33,6 +34,7 @@ export default function CommitRow({
   commit, index, graphWidth, hovered, selected, query, onHover, onSelect,
 }: Props) {
   const hit = query.length > 0 && commit.message_subject.toLowerCase().includes(query.toLowerCase());
+  const laneTint = commit.node ? hexToRgba(commit.node.color, 0.10) : undefined;
   return (
     <div
       className={[
@@ -42,6 +44,7 @@ export default function CommitRow({
         selected ? "selected" : "",
         hit ? "commit-search-hit" : "",
       ].join(" ")}
+      style={laneTint ? ({ backgroundColor: laneTint } as React.CSSProperties) : undefined}
       onMouseEnter={() => onHover(commit.sha)}
       onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(commit.sha)}
