@@ -27,12 +27,15 @@ export default function App() {
     repoStore.set({ status: s.repoPath === path ? s.status : "loading", error: null, repoPath: path });
     try {
       const repo: RepoInfo = await openRepo(path);
+      // Use the backend-normalized path for all subsequent calls (cache key).
+      const repoPath = repo.path;
       const [history, timeline] = await Promise.all([
-        fetchHistory(path, { limit: 300, q }),
-        fetchTimeline(path),
+        fetchHistory(repoPath, { limit: 300, q }),
+        fetchTimeline(repoPath),
       ]);
       repoStore.set({
         repo,
+        repoPath,
         items: history.items,
         total: history.total,
         maxLane: history.max_lane,
