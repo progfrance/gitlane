@@ -1,4 +1,5 @@
-"""History endpoint with cursor pagination and live search filtering."""
+"""History endpoint with cursor pagination, live search filtering, and
+branch switching via the `ref` query parameter."""
 from __future__ import annotations
 
 import base64
@@ -7,9 +8,9 @@ import hashlib
 from fastapi import APIRouter, HTTPException, Query
 
 from ..models.commit import CommitItem, HistoryEnvelope, RefBadge
-from ..services import git_reader
+from ..services import git_reader, view_builder
 from ..services.timeline_builder import build_timeline
-from ..services.cache import RepoState, cache
+from ..services.cache import cache
 
 router = APIRouter(tags=["history"])
 
@@ -30,7 +31,7 @@ def _encode_cursor(offset: int) -> str:
     return base64.b64encode(str(offset).encode()).decode()
 
 
-def _badges_for(state: RepoState, sha: str, decorations: list[str]) -> list[RefBadge]:
+def _badges_for(state, sha: str, decorations: list[str]) -> list[RefBadge]:
     badges: list[RefBadge] = []
     for deco in decorations:
         if deco.startswith("HEAD -> "):
@@ -86,11 +87,13 @@ def history(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
 
-    if ref != state.head and ref not in (state.refs.local_branches | state.refs.remote_branches | state.refs.tags):
-        # Allow any valid ref the repo knows; reload lazily when needed.
-        pass
+    # Resolve the requested ref → view (cached, or freshly built).
+    try:
+        view = view_builder.get_view(state, path, ref)
+    except git_reader.GitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    commits = state.commits
+    commits = view.commits
     q = q.strip()
     offset = _decode_cursor(cursor)
 
@@ -106,7 +109,7 @@ def history(
 
     page = filtered[offset : offset + limit]
     has_more = offset + limit < len(filtered)
-    layout_by_sha = {r["sha"]: r for r in state.layout_rows}
+    layout_by_sha = {r["sha"]: r for r in view.layout_rows}
     items = []
     for c, badges in page:
         lr = layout_by_sha.get(c.sha, {})
@@ -130,7 +133,7 @@ def history(
                 status_checks=_status_checks(c.sha),
                 additions=c.additions,
                 deletions=c.deletions,
-                is_head=c.sha == state.head_sha,
+                is_head=c.sha == view.head_sha,
             )
         )
     return HistoryEnvelope(
@@ -138,21 +141,29 @@ def history(
         next_cursor=_encode_cursor(offset + limit) if has_more else None,
         has_more=has_more,
         total=len(filtered),
-        max_lane=state.max_lane,
+        max_lane=view.max_lane,
+        active_ref=view.ref,
     )
 
 
 @router.get("/timeline")
 def timeline(
     path: str = Query(..., description="repo path previously opened"),
+    ref: str = "HEAD",
     buckets: int = Query(90, ge=10, le=300),
 ) -> dict:
     try:
         state = cache.require(path)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
+
+    try:
+        view = view_builder.get_view(state, path, ref)
+    except git_reader.GitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return build_timeline(
-        [c.timestamp for c in state.commits], buckets,
-        additions=[c.additions for c in state.commits],
-        deletions=[c.deletions for c in state.commits],
+        [c.timestamp for c in view.commits], buckets,
+        additions=[c.additions for c in view.commits],
+        deletions=[c.deletions for c in view.commits],
     )

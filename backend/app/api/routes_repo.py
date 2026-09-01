@@ -6,8 +6,7 @@ import os
 from fastapi import APIRouter, HTTPException
 
 from ..models.repo import OpenRepoRequest, OpenRepoResponse, RepoInfo
-from ..services import git_reader, recent
-from ..services.lane_layout import compute_layout
+from ..services import git_reader, recent, view_builder
 from ..services.cache import RepoState, cache
 
 router = APIRouter(tags=["repo"])
@@ -37,26 +36,22 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
 
 
 def reload_state(path: str) -> RepoState:
-    """(Re)read refs, commits and lane layout for an open repo."""
+    """(Re)read refs, commits and lane layout for an open repo (HEAD view)."""
     try:
         refs = git_reader.read_refs(path)
-        commits = git_reader.read_commits(path, ref=refs.head, with_stats=True)
+        view = view_builder.build_view(path, refs.head)
     except git_reader.GitError as exc:
         raise HTTPException(status_code=500, detail=f"git error: {exc}") from exc
 
     state = RepoState(path=path, name=git_reader.repo_name(path), head=refs.head)
     state.head_sha = refs.head_sha
     state.refs = refs
-    state.commits = commits
-
-    # Global lane layout is computed once per load (stable across pagination).
-    parents_map = {c.sha: c.parents for c in commits}
-    rows, max_lane = compute_layout([c.sha for c in commits], parents_map)
-    state.layout_rows = [
-        {"sha": r.sha, "lane_index": r.lane_index, "node": r.node, "segments": r.segments}
-        for r in rows
-    ]
-    state.max_lane = max_lane
+    state.commits = view.commits
+    state.layout_rows = view.layout_rows
+    state.max_lane = view.max_lane
+    state.active_ref = refs.head
+    state.active_sha = view.head_sha
+    state.views[refs.head] = view
 
     cache.put(state)
     return state

@@ -16,6 +16,9 @@ export interface RepoState {
   nextCursor: string | null;
   hasMore: boolean;
   loadingMore: boolean;
+  activeRef: string;
+  branches: { name: string; kind: string; sha: string }[];
+  recentRepos: { path: string; name: string }[];
 }
 
 type Listener = () => void;
@@ -36,6 +39,9 @@ let state: RepoState = {
   nextCursor: null,
   hasMore: false,
   loadingMore: false,
+  activeRef: "HEAD",
+  branches: [],
+  recentRepos: [],
 };
 
 const listeners = new Set<Listener>();

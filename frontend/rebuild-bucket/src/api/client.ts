@@ -43,6 +43,7 @@ export interface HistoryEnvelope {
   has_more: boolean;
   total: number;
   max_lane: number;
+  active_ref: string;
 }
 
 export interface RepoInfo {
@@ -99,11 +100,12 @@ export async function fetchCurrentRepo(): Promise<RepoInfo | null> {
 
 export async function fetchHistory(
   path: string,
-  opts: { limit?: number; q?: string; cursor?: string } = {}
+  opts: { limit?: number; q?: string; cursor?: string; ref?: string } = {}
 ): Promise<HistoryEnvelope> {
   const params = new URLSearchParams({ path, limit: String(opts.limit ?? 300) });
   if (opts.q) params.set("q", opts.q);
   if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.ref) params.set("ref", opts.ref);
   const res = await fetch(`/history?${params}`);
   return jsonOrThrow<HistoryEnvelope>(res);
 }
@@ -113,7 +115,23 @@ export async function fetchRefs(path: string): Promise<RefsResponse> {
   return jsonOrThrow<RefsResponse>(res);
 }
 
-export async function fetchTimeline(path: string, buckets = 90): Promise<TimelineData> {
-  const res = await fetch(`/timeline?path=${encodeURIComponent(path)}&buckets=${buckets}`);
+export async function fetchTimeline(path: string, buckets = 90, ref?: string): Promise<TimelineData> {
+  const params = new URLSearchParams({ path, buckets: String(buckets) });
+  if (ref) params.set("ref", ref);
+  const res = await fetch(`/timeline?${params}`);
   return jsonOrThrow<TimelineData>(res);
+}
+
+export interface RecentRepo {
+  path: string;
+  name: string;
+}
+
+export async function fetchRecentRepos(): Promise<RecentRepo[]> {
+  const res = await fetch("/repos/recent");
+  if (!res.ok) return [];
+  const body = await res.json();
+  return Array.isArray(body)
+    ? body.filter((r): r is RecentRepo => !!r && typeof r.path === "string")
+    : [];
 }

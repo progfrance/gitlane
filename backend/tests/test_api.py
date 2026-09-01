@@ -104,6 +104,64 @@ class TestRefs:
         kinds = {b["kind"] for b in body["local_branches"]}
         assert kinds == {"local_branch"}
 
+    def test_refs_refreshes_new_branch(self, client, repo_with_merge, tmp_path):
+        import subprocess
+
+        cache.invalidate(str(repo_with_merge))
+        client.post("/repos/open", json={"path": str(repo_with_merge)})
+        subprocess.run(
+            ["git", "-C", str(repo_with_merge), "checkout", "-q", "-b", "fresh-branch"],
+            check=True, capture_output=True, timeout=30,
+        )
+        r = client.get("/refs", params={"path": str(repo_with_merge)})
+        names = [b["name"] for b in r.json()["local_branches"]]
+        assert "fresh-branch" in names
+
+
+class TestBranchSwitch:
+    """The /history `ref` parameter must filter to the selected branch."""
+
+    def test_history_defaults_to_head(self, opened, client):
+        r = client.get("/history", params={"path": opened, "limit": 50})
+        body = r.json()
+        assert body["active_ref"] == "main"
+        assert body["total"] == 4  # c1 c2(merged) c3 c4 — full main history
+
+    def test_history_switches_branch(self, opened, client):
+        r = client.get("/history", params={"path": opened, "ref": "feature", "limit": 50})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["active_ref"] == "feature"
+        subjects = [i["message_subject"] for i in body["items"]]
+        assert "c2 on feature" in subjects
+        assert "c3 on main" not in subjects
+        assert "c4 merge feature" not in subjects
+
+    def test_history_ref_back_and_forth_uses_cache(self, opened, client):
+        r1 = client.get("/history", params={"path": opened, "ref": "feature"})
+        r2 = client.get("/history", params={"path": opened, "ref": "main"})
+        r3 = client.get("/history", params={"path": opened, "ref": "feature"})
+        assert r1.json()["total"] == 2
+        assert r2.json()["total"] == 4
+        assert r3.json()["total"] == 2
+        assert r3.json()["active_ref"] == "feature"
+
+    def test_history_is_head_follows_branch(self, opened, client):
+        r = client.get("/history", params={"path": opened, "ref": "feature", "limit": 50})
+        items = r.json()["items"]
+        head = next(i for i in items if i["is_head"])
+        assert head["message_subject"] == "c2 on feature"
+
+    def test_history_unknown_ref_returns_400(self, opened, client):
+        r = client.get("/history", params={"path": opened, "ref": "no-such-branch"})
+        assert r.status_code == 400
+
+    def test_timeline_honors_ref(self, opened, client):
+        r = client.get("/timeline", params={"path": opened, "ref": "feature"})
+        assert r.status_code == 200
+        total = sum(p["count"] for p in r.json()["points"])
+        assert total == 2
+
 
 class TestLayoutInHistory:
     def test_merge_commit_has_merge_curve(self, opened, client):

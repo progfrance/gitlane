@@ -1,7 +1,10 @@
 /** GitLane app shell: toolbar + mini timeline + commit table (PLAN sections 2 & 4). */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { fetchCurrentRepo, fetchHistory, fetchTimeline, openRepo, type CommitItem } from "../api/client";
+import {
+  fetchCurrentRepo, fetchHistory, fetchRecentRepos, fetchRefs, fetchTimeline, openRepo,
+  type CommitItem,
+} from "../api/client";
 import { useRepoEvents } from "../api/events";
 import { repoStore } from "../store/useRepoStore";
 import TopToolbar from "../components/TopToolbar";
@@ -24,7 +27,7 @@ export default function App() {
   const debounceRef = useRef<number | undefined>(undefined);
   const loadSeq = useRef(0); // stale-response guard: only the latest load writes
 
-  const load = useCallback(async (path: string, q: string, reopen = true) => {
+  const load = useCallback(async (path: string, q: string, reopen = true, ref?: string) => {
     const seq = ++loadSeq.current;
     const t0 = performance.now();
     repoStore.set({ status: s.repoPath === path ? s.status : "loading", error: null, repoPath: path });
@@ -37,8 +40,8 @@ export default function App() {
         repoPath = repo.path;
       }
       const [history, timeline] = await Promise.all([
-        fetchHistory(repoPath, { limit: 300, q }),
-        fetchTimeline(repoPath),
+        fetchHistory(repoPath, { limit: 300, q, ref }),
+        fetchTimeline(repoPath, 90, ref),
       ]);
       if (seq !== loadSeq.current) return; // a newer load superseded this one
       repoStore.set({
@@ -53,12 +56,25 @@ export default function App() {
         nextCursor: history.next_cursor,
         hasMore: history.has_more,
         loadingMore: false,
+        activeRef: history.active_ref,
       });
     } catch (e) {
       if (seq !== loadSeq.current) return;
       repoStore.set({ status: "error", error: e instanceof Error ? e.message : String(e), loadingMore: false });
     }
   }, [s.repoPath]);
+
+  // Refresh the branch list + recent repos for the header selectors.
+  const refreshMeta = useCallback(async (path: string | null) => {
+    if (!path) return;
+    const [refs, recents] = await Promise.all([fetchRefs(path), fetchRecentRepos()]);
+    const cur = repoStore.get();
+    if (cur.repoPath !== path) return; // repo changed while fetching
+    repoStore.set({
+      branches: [...refs.local_branches, ...refs.remote_branches],
+      recentRepos: recents,
+    });
+  }, []);
 
   // Load the next page of history (infinite scroll).
   const loadMore = useCallback(async () => {
@@ -67,7 +83,12 @@ export default function App() {
     const seq = loadSeq.current;
     repoStore.set({ loadingMore: true });
     try {
-      const history = await fetchHistory(cur.repoPath, { limit: 300, q: cur.query, cursor: cur.nextCursor });
+      const history = await fetchHistory(cur.repoPath, {
+        limit: 300,
+        q: cur.query,
+        cursor: cur.nextCursor,
+        ref: cur.activeRef === "HEAD" ? undefined : cur.activeRef,
+      });
       if (seq !== loadSeq.current) return; // a full reload superseded this pagination
       repoStore.set({
         items: [...cur.items, ...history.items],
@@ -85,19 +106,34 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const current = await fetchCurrentRepo();
-      void load(current?.path ?? DEFAULT_REPO, "");
+      await Promise.all([load(current?.path ?? DEFAULT_REPO, ""), refreshMeta(current?.path ?? null)]);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debounced search (100-150 ms per plan §11).
+  // Debounced search (100-150 ms per plan §11) — keep the active ref.
   useEffect(() => {
     if (!s.repoPath) return;
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      void load(s.repoPath!, s.query, false);
+      const cur = repoStore.get();
+      void load(cur.repoPath!, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
     }, 130);
     return () => window.clearTimeout(debounceRef.current);
   }, [s.query]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Branch switch from the header selector.
+  const handleBranch = useCallback((ref: string) => {
+    const cur = repoStore.get();
+    repoStore.set({ activeRef: ref, items: [], nextCursor: null, hasMore: false, query: "" });
+    void load(cur.repoPath!, "", false, ref);
+  }, [load]);
+
+  // Repo switch from the header selector.
+  const handleRepo = useCallback((path: string) => {
+    repoStore.set({ activeRef: "HEAD", query: "" });
+    void load(path, "", true);
+    void refreshMeta(path);
+  }, [load, refreshMeta]);
 
   // Keyboard shortcuts (plan §10.1).
   useEffect(() => {
@@ -127,10 +163,13 @@ export default function App() {
 
   // Auto-refresh on window focus (lightweight complement to the websocket).
   useEffect(() => {
-    const onFocus = () => { if (s.repoPath) void load(s.repoPath, s.query); };
+    const onFocus = () => {
+      const cur = repoStore.get();
+      if (cur.repoPath) void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [s.repoPath, s.query, load]);
+  }, [load]);
 
   // Live updates: websocket events from the .git watcher (plan §10.5).
   useRepoEvents((ev) => {
@@ -138,7 +177,8 @@ export default function App() {
     if (!cur.repoPath) return;
     if (ev.path && ev.path !== cur.repoPath) return;
     if (ev.type === "repo_updated" || ev.type === "new_commit" || ev.type === "head_changed") {
-      void load(cur.repoPath, cur.query);
+      void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
+      void refreshMeta(cur.repoPath);
     }
   }, s.repoPath != null);
 
@@ -149,10 +189,19 @@ export default function App() {
     <div className="app-shell">
       <TopToolbar
         repo={s.repo}
+        activeRef={s.activeRef}
+        branches={s.branches}
+        recentRepos={s.recentRepos}
         query={s.query}
         total={s.total}
         onQuery={(q) => repoStore.set({ query: q })}
-        onRefresh={() => s.repoPath && void load(s.repoPath, s.query)}
+        onRefresh={() => {
+          const cur = repoStore.get();
+          if (cur.repoPath) void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
+          void refreshMeta(cur.repoPath);
+        }}
+        onBranch={handleBranch}
+        onRepo={handleRepo}
         searchRef={searchRef}
       />
       <MiniTimeline
@@ -179,7 +228,7 @@ export default function App() {
           {s.status !== "error" && items.length === 0 && s.status !== "loading" && (
             <div className="state-block">
               <span className="state-title">No commits</span>
-              <span>{s.query ? `No result for “${s.query}”` : "This repository has no commits on HEAD"}</span>
+              <span>{s.query ? `No result for “${s.query}”` : `This repository has no commits on ${s.activeRef}`}</span>
             </div>
           )}
           {items.length > 0 && (

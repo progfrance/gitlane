@@ -37,6 +37,7 @@ class HistoryEnvelope(BaseModel):
     has_more: bool = False
     total: int = 0
     max_lane: int = 0
+    active_ref: str = "HEAD"
 
 
 class TimelinePoint(BaseModel):
