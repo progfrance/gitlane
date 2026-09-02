@@ -1,5 +1,6 @@
 /** Reusable labelled dropdown selector (repo / branch pickers in the header). */
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "../i18n";
 
 export interface DropdownItem {
   value: string;
@@ -24,6 +25,7 @@ export default function DropdownSelector({ label, icon, value, groups, onSelect 
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeValue = value;
+  const { t } = useI18n();
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function DropdownSelector({ label, icon, value, groups, onSelect 
               ))}
             </div>
           ))}
-          {all.length === 0 && <div className="selector-empty">Aucune entrée</div>}
+          {all.length === 0 && <div className="selector-empty">{t("empty")}</div>}
         </div>
       )}
     </div>

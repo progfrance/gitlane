@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CommitItem } from "../api/client";
 import CommitRow from "./CommitRow";
 import { ROW_HEIGHT } from "../graph/coords";
+import { useI18n } from "../i18n";
 
 const OVERDRAW = 8; // rows rendered above/below the viewport
 const LOAD_MORE_EDGE = 400; // px from bottom to trigger the next page
@@ -32,6 +33,7 @@ export default function VirtualCommitTable({
   items, graphWidth, remote, hoveredSha, selectedSha, query,
   hasMore, loadingMore, onLoadMore, onHover, onSelect, onScroll, scrollRef,
 }: Props) {
+  const { t } = useI18n();
   const [range, setRange] = useState({ start: 0, end: Math.min(items.length, 40) });
   const frame = useRef<number | undefined>(undefined);
   const guard = useRef({ hasMore, loadingMore, onLoadMore, length: items.length });
@@ -108,10 +110,10 @@ export default function VirtualCommitTable({
       </div>
       <div className="commit-scroll-footer">
         {loadingMore
-          ? "Chargement…"
+          ? t("loading_more")
           : hasMore
-            ? "↓ Scrollez pour charger la suite"
-            : "Fin de l’historique"}
+            ? t("scroll_for_more")
+            : t("end_of_history")}
       </div>
       <style>{`.commit-rows { --graph-width: ${graphWidth}px; }`}</style>
     </div>

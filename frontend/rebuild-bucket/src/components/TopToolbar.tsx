@@ -1,7 +1,8 @@
-/** Top header: current-repo dropdown, branch dropdown, search, refresh. */
+/** Top header: current-repo dropdown, branch dropdown, search, refresh, language. */
 import { useCallback } from "react";
 import type { RepoInfo } from "../api/client";
 import DropdownSelector, { type DropdownGroup } from "./DropdownSelector";
+import { useI18n, type Locale } from "../i18n";
 
 interface Props {
   repo: RepoInfo | null;
@@ -35,19 +36,21 @@ export default function TopToolbar({
   repo, activeRef, branches, recentRepos, query, total,
   onQuery, onRefresh, onBranch, onRepo, searchRef,
 }: Props) {
+  const { t, locale, setLocale } = useI18n();
+
   // Build branch groups for the dropdown: local first, then remote.
   const branchGroups: DropdownGroup[] = [];
   const locals = branches.filter((b) => b.kind === "local_branch");
   const remotes = branches.filter((b) => b.kind === "remote_branch");
   if (locals.length) {
     branchGroups.push({
-      label: "Local branches",
+      label: t("local_branches"),
       items: locals.map((b) => ({ value: b.name, label: b.name })),
     });
   }
   if (remotes.length) {
     branchGroups.push({
-      label: "Remote branches",
+      label: t("remote_branches"),
       items: remotes.map((b) => ({ value: b.name, label: b.name })),
     });
   }
@@ -66,7 +69,7 @@ export default function TopToolbar({
     repoGroups.push({ items: reposItems });
   }
   repoGroups.push({
-    items: [{ value: "__picker__", label: "Browse / Open another repo…" }],
+    items: [{ value: "__picker__", label: t("browse_repo") }],
   });
 
   const handleRepoSelect = useCallback(
@@ -93,18 +96,20 @@ export default function TopToolbar({
     [onQuery],
   );
 
+  const pick = (l: Locale) => () => setLocale(l);
+
   return (
     <div className="top-toolbar">
       <div className="header-selectors">
         <DropdownSelector
-          label="Current Repository"
+          label={t("current_repo")}
           icon={RepoIcon}
           value={repo?.name ?? "GitLane"}
           groups={repoGroups}
           onSelect={handleRepoSelect}
         />
         <DropdownSelector
-          label="Current Branch"
+          label={t("current_branch")}
           icon={BranchIcon}
           value={displayBranch}
           groups={branchGroups}
@@ -113,19 +118,37 @@ export default function TopToolbar({
       </div>
       <span className="toolbar-sep" />
       <span className="toolbar-count">
-        {repo ? `${total} commits` : "no repo"}
+        {repo ? t("commits_count", { total }) : t("no_repo")}
       </span>
       <span className="toolbar-spacer" />
       <input
         ref={searchRef as React.RefObject<HTMLInputElement>}
         className="toolbar-search"
         type="search"
-        placeholder="Search commit, sha, author…  ( / )"
+        placeholder={t("search_placeholder")}
         value={query}
         onChange={handleSearch}
         onKeyDown={handleKeyDown}
       />
-      <button className="toolbar-btn" title="Refresh" onClick={onRefresh}>
+      <div className="lang-toggle" role="group" aria-label={t("language")}>
+        <button
+          type="button"
+          className={locale === "fr" ? "active" : ""}
+          onClick={pick("fr")}
+          aria-pressed={locale === "fr"}
+        >
+          FR
+        </button>
+        <button
+          type="button"
+          className={locale === "en" ? "active" : ""}
+          onClick={pick("en")}
+          aria-pressed={locale === "en"}
+        >
+          EN
+        </button>
+      </div>
+      <button className="toolbar-btn" title={t("refresh")} onClick={onRefresh}>
         ⟳
       </button>
     </div>

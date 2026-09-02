@@ -1,49 +1,49 @@
 # GitLane
 
-Visualiseur Git web avec graphe de commits en **swimlanes** pastel — backend Python (FastAPI), frontend React/TypeScript avec rendu Canvas virtualisé.
+Web Git viewer with a commit graph rendered as pastel **swimlanes** — Python backend (FastAPI), React/TypeScript frontend with virtualized Canvas rendering.
 
 ![stack](https://img.shields.io/badge/python-3.13-blue) ![fastapi](https://img.shields.io/badge/fastapi-0.115-green) ![react](https://img.shields.io/badge/react-18-61dafb)
 
-## Fonctionnalités
+## Features
 
-- Ouverture d'un dépôt Git local (validation du chemin, sans exécution shell arbitraire)
-- Historique des commits en rows denses 32 px avec graphe swimlanes coloré (Canvas, bezier pour forks/merges)
-- Nœuds premium : perles cerclées, merge en double anneau, HEAD en donut, glow au survol
-- Fond de ligne teinté par la couleur de la branche (swimlane pastel)
-- Diff stats GitHub-style : `+N −M` vert/rouge + 5 carrés de répartition
-- Badges refs typés avec icônes : branche locale (vert), remote (bleu), tag (orange), HEAD (contour accent)
-- **Changement de dépôt intégré** : bouton `↩ Repo` / `Ctrl+O`, page picker avec récents persistés, scan de dossiers, saisie manuelle
-- Recherche instantanée (message / SHA / auteur / ref) avec surlignage
-- Mini timeline d'activité (aire bleue + barres vertes/rouges) avec viewport synchronisé au scroll
-- Virtual scroll (overdraw 8 rows) — fluide sur gros historiques
-- Auto-refresh via WebSocket quand le dépôt change (poll `.git` 2 s côté serveur)
-- Raccourcis clavier : `j`/`k` (commit suivant/précédent), `/` (recherche), `Échap` (effacer), `Ctrl+O` (changer de repo)
+- Open a local Git repository (path validation, no arbitrary shell execution)
+- Commit history as dense 32 px rows with a colored swimlane graph (Canvas, bezier curves for forks/merges)
+- Premium nodes: ringed beads, double-ring merges, HEAD as a donut, glow on hover
+- Row background tinted by the branch color (pastel swimlane)
+- GitHub-style diff stats: green/red `+N −M` + 5 distribution squares
+- Typed ref badges with icons: local branch (green), remote (blue), tag (orange), HEAD (accent outline)
+- **Built-in repository switching**: `↩ Repo` button / `Ctrl+O`, picker page with persisted recents, folder scan, manual entry
+- Instant search (message / SHA / author / ref) with highlighting
+- Mini activity timeline (blue area + green/red bars) with viewport synchronized to scrolling
+- Virtual scroll (overdraw 8 rows) — smooth on large histories
+- Auto-refresh via WebSocket when the repository changes (server-side `.git` poll every 2 s)
+- Keyboard shortcuts: `j`/`k` (next/previous commit), `/` (search), `Esc` (clear), `Ctrl+O` (switch repo)
 
-## Lancement (sans npm — bundle gelé)
+## Launching (no npm — frozen bundle)
 
-**Aucun npm/node requis** : le frontend est un build statique pré-compilé dans `frontend/dist/`,
-servi par FastAPI. Il faut seulement Python ≥ 3.11 (miniforge/conda recommandé) et git.
+**No npm/node required**: the frontend is a pre-compiled static build in `frontend/dist/`,
+served by FastAPI. You only need Python ≥ 3.11 (miniforge/conda recommended) and git.
 
 ```bash
-# Backend (port 8088, sert aussi le bundle frontend)
+# Backend (port 8088, also serves the frontend bundle)
 cd backend
-conda create -n gitlane python=3.13 -y && conda activate gitlane   # ou venv classique
+conda create -n gitlane python=3.13 -y && conda activate gitlane   # or a plain venv
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8088
 ```
 
-Ouvrir **http://127.0.0.1:8088** — au premier lancement la page `/picker` s'affiche
-pour choisir un dépôt ; ensuite le dernier dépôt ouvert se rouvre automatiquement.
+Open **http://127.0.0.1:8088** — on first launch the `/picker` page is shown
+to choose a repository; afterwards the last opened repository reopens automatically.
 
-Installation hors-ligne et FAQ : voir [INSTALL.md](INSTALL.md).
+Offline installation and FAQ: see [INSTALL.md](INSTALL.md).
 
-### Re-bundler le frontend (uniquement si le rendu doit changer)
+### Re-bundling the frontend (only if the rendering must change)
 
-Les sources TS/React sont archivées dans `frontend/rebuild-bucket/` :
+The TS/React sources are archived in `frontend/rebuild-bucket/`:
 
 ```bash
 cd frontend/rebuild-bucket
-npm install && npm run build      # régénère ../dist/ (bundle gelé)
+npm install && npm run build      # regenerates ../dist/ (frozen bundle)
 ```
 
 ## Tests
@@ -53,22 +53,22 @@ cd backend
 .venv/Scripts/python -m pytest tests/ -q
 ```
 
-- 11 tests du moteur de lanes (cas plan §8.4 : linéaire, merge, branche longue, octopus, racines multiples, géométrie)
-- 12 tests de contrat API (open/history/refs/events + layout) + diff stats + flags HEAD
-- 20 tests des nouvelles fonctionnalités : récents persistés, browse/validate, picker + redirection
+- 11 lane-engine tests (plan §8.4 cases: linear, merge, long branch, octopus, multiple roots, geometry)
+- 12 API contract tests (open/history/refs/events + layout) + diff stats + HEAD flags
+- 20 tests for the new features: persisted recents, browse/validate, picker + redirection
 
 ## API
 
 | Endpoint | Description |
 |---|---|
-| `POST /repos/open` | Ouvre un dépôt (`{"path": "..."}`), calcule le layout global, log les récents |
-| `GET /history?path=&q=&limit=` | Commits paginés + `lane_index`, `node`, `segments`, `additions`, `deletions`, `is_head` |
-| `GET /refs?path=` | Branches locales/remotes/tags + HEAD |
-| `GET /timeline?path=&buckets=` | Buckets d'activité pour la sparkline (+ `adds`/`dels` par bucket) |
-| `GET /repos/recent` · `POST /repos/recent` | Récents persistés (`~/.gitlane_recent.json`, max 10) |
-| `GET /repos/browse?root=&depth=` | Scan de dossiers git (profondeur 1-3, ignore symlinks/dotfiles) |
-| `GET /repos/validate?path=` | Pré-validation d'un chemin (is_git, name, head) sans ouvrir |
-| `GET /picker` | Page HTML/JS pur de sélection de dépôt |
+| `POST /repos/open` | Opens a repository (`{"path": "..."}`), computes the global layout, logs recents |
+| `GET /history?path=&q=&limit=` | Paginated commits + `lane_index`, `node`, `segments`, `additions`, `deletions`, `is_head` |
+| `GET /refs?path=` | Local/remote branches/tags + HEAD |
+| `GET /timeline?path=&buckets=` | Activity buckets for the sparkline (+ `adds`/`dels` per bucket) |
+| `GET /repos/recent` · `POST /repos/recent` | Persisted recents (`~/.gitlane_recent.json`, max 10) |
+| `GET /repos/browse?root=&depth=` | Scan of git folders (depth 1-3, ignores symlinks/dotfiles) |
+| `GET /repos/validate?path=` | Pre-validation of a path (is_git, name, head) without opening it |
+| `GET /picker` | Pure HTML/JS page for repository selection |
 | `WS /events` | `repo_updated`, `head_changed`, `new_commit` |
 
 ## Architecture
@@ -77,24 +77,24 @@ cd backend
 backend/app/
   api/          routes_repo, routes_history, routes_refs, routes_events (WS),
                 routes_recent, routes_browse + static/repos.html (picker)
-  services/     git_reader (CLI git + numstat), lane_layout, timeline_builder,
-                cache, watcher, recent (persistance JSON)
-  models/       schémas Pydantic (contrat API)
+  services/     git_reader (git CLI + numstat), lane_layout, timeline_builder,
+                cache, watcher, recent (JSON persistence)
+  models/       Pydantic schemas (API contract)
 frontend/
-  dist/         bundle statique gelé (servi par FastAPI — pas de npm au runtime)
-  rebuild-bucket/  sources TS/React archivées (re-build optionnel)
+  dist/         frozen static bundle (served by FastAPI — no npm at runtime)
+  rebuild-bucket/  archived TS/React sources (optional rebuild)
 ```
 
-## Sécurité / robustesse
+## Security / robustness
 
-- Chemins absolus uniquement, vérification `toplevel == path` (pas de repo parent capté)
-- Sous-processus git en liste d'arguments fixe + timeout 15 s, jamais de shell
-- Recherche : révision sanitisée (pas d'option git injectée)
-- Scan browse : profondeur bornée (≤ 3), symlinks et dotfiles ignorés, dossier git = feuille
-- Gestion d'états loading / error / empty avec repo-picker sur erreur
+- Absolute paths only, `toplevel == path` check (no parent repo captured)
+- Git subprocesses with a fixed argument list + 15 s timeout, never a shell
+- Search: sanitized revision (no injected git option)
+- Browse scan: bounded depth (≤ 3), symlinks and dotfiles ignored, git folder = leaf
+- Handling of loading / error / empty states with repo-picker on error
 
-## Déploiement
+## Deployment
 
-- Une seule origine : `uvicorn app.main:app --port 8088` sert l'API + le bundle — pas de CORS
-- Reverse-proxy possible (nginx/caddy) devant uvicorn si besoin
-- Persistance des derniers repos : `~/.gitlane_recent.json` (survit aux redémarrages)
+- Single origin: `uvicorn app.main:app --port 8088` serves the API + the bundle — no CORS
+- Reverse proxy possible (nginx/caddy) in front of uvicorn if needed
+- Persistence of recent repositories: `~/.gitlane_recent.json` (survives restarts)

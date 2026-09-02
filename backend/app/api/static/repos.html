@@ -39,6 +39,15 @@
     display: inline-block;
   }
   .subtitle { color: #8e8e93; font-size: 13px; margin: 0 0 18px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .card-head h1 { margin: 0; }
+  .lang-toggle { display: inline-flex; border: 1px solid #e5e5ea; border-radius: 8px; overflow: hidden; }
+  .lang-toggle button {
+    height: 26px; padding: 0 10px; border: none; background: #fff;
+    font-size: 11px; font-weight: 700; letter-spacing: .03em; cursor: pointer; color: #8e8e93;
+  }
+  .lang-toggle button:hover { background: #eef3fb; }
+  .lang-toggle button.active { background: #0091ff; color: #fff; }
   h2 {
     font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
     color: #8e8e93; margin: 18px 0 8px;
@@ -88,29 +97,35 @@
 </head>
 <body>
   <div class="card">
-    <h1><span class="logo"></span> GitLane</h1>
-    <p class="subtitle">Choisir un dépôt Git à visualiser</p>
+    <div class="card-head">
+      <h1><span class="logo"></span> GitLane</h1>
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" data-lang="fr">FR</button>
+        <button type="button" data-lang="en">EN</button>
+      </div>
+    </div>
+    <p class="subtitle" data-i18n="subtitle">Choisir un dépôt Git à visualiser</p>
 
-    <h2>Récents</h2>
-    <div id="recents"><div class="empty">Chargement…</div></div>
+    <h2 data-i18n="recent">Récents</h2>
+    <div id="recents"><div class="empty" data-i18n="loading">Chargement…</div></div>
 
-    <h2>Parcourir</h2>
+    <h2 data-i18n="browse">Parcourir</h2>
     <div class="formline">
-      <input id="root" type="text" placeholder="Dossier racine (absolu), ex : C:\Users\Dell\Desktop\MesProjets" />
+      <input id="root" type="text" data-i18n-ph="root_ph" placeholder="Dossier racine (absolu), ex : C:\Users\Dell\Desktop\MesProjets" />
       <select id="depth">
-        <option value="1">1 niveau</option>
-        <option value="2">2 niveaux</option>
-        <option value="3">3 niveaux</option>
+        <option value="1" data-i18n="depth_1">1 niveau</option>
+        <option value="2" data-i18n="depth_2">2 niveaux</option>
+        <option value="3" data-i18n="depth_3">3 niveaux</option>
       </select>
-      <button id="scanBtn">Scanner</button>
+      <button id="scanBtn" data-i18n="scan">Scanner</button>
     </div>
     <div class="scan-results" id="scanResults" hidden></div>
-    <div class="hint">Ne scanne que les dossiers contenant un sous-dossier <code>.git</code> — profondeur limitée.</div>
+    <div class="hint" data-i18n="scan_hint">Ne scanne que les dossiers contenant un sous-dossier <code>.git</code> — profondeur limitée.</div>
 
-    <h2>Manuel</h2>
+    <h2 data-i18n="manual">Manuel</h2>
     <div class="formline">
-      <input id="manual" type="text" placeholder="Chemin absolu d'un dépôt git" />
-      <button id="openBtn" class="primary">Ouvrir</button>
+      <input id="manual" type="text" data-i18n-ph="manual_ph" placeholder="Chemin absolu d'un dépôt git" />
+      <button id="openBtn" class="primary" data-i18n="open">Ouvrir</button>
     </div>
     <div class="err" id="err"></div>
   </div>
@@ -119,6 +134,81 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const $err = $("err");
+
+/* ---- i18n (shares the `gitlane.locale` key with the React app) ---- */
+const STORAGE_KEY = "gitlane.locale";
+const I18N = {
+  fr: {
+    subtitle: "Choisir un dépôt Git à visualiser",
+    recent: "Récents", loading: "Chargement…", browse: "Parcourir",
+    root_ph: "Dossier racine (absolu), ex : C:\\Users\\Dell\\Desktop\\MesProjets",
+    depth_1: "1 niveau", depth_2: "2 niveaux", depth_3: "3 niveaux",
+    scan: "Scanner",
+    scan_hint: "Ne scanne que les dossiers contenant un sous-dossier <code>.git</code> — profondeur limitée.",
+    manual: "Manuel", manual_ph: "Chemin absolu d'un dépôt git", open: "Ouvrir",
+    no_recent: "Aucun dépôt ouvert récemment.",
+    need_root: "Indique un dossier racine.",
+    scanning: '<span class="spinner"></span> Scan en cours…',
+    no_git_found: "Aucun dépôt git trouvé ici.",
+    scan_error: "Erreur pendant le scan.",
+    need_path: "Indique un chemin absolu.",
+    error_status: "Erreur {status}",
+  },
+  en: {
+    subtitle: "Choose a Git repository to visualize",
+    recent: "Recent", loading: "Loading…", browse: "Browse",
+    root_ph: "Root folder (absolute), e.g. C:\\Users\\Dell\\Desktop\\MesProjets",
+    depth_1: "1 level", depth_2: "2 levels", depth_3: "3 levels",
+    scan: "Scan",
+    scan_hint: "Only scans folders containing a <code>.git</code> subfolder — limited depth.",
+    manual: "Manual", manual_ph: "Absolute path of a git repository", open: "Open",
+    no_recent: "No recently opened repositories.",
+    need_root: "Please provide a root folder.",
+    scanning: '<span class="spinner"></span> Scanning…',
+    no_git_found: "No git repository found here.",
+    scan_error: "Error during scan.",
+    need_path: "Please provide an absolute path.",
+    error_status: "Error {status}",
+  },
+};
+
+function detectLocale() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "fr" || saved === "en") return saved;
+  } catch (e) { /* ignore */ }
+  return (navigator.language || "").toLowerCase().startsWith("fr") ? "fr" : "en";
+}
+
+let locale = detectLocale();
+
+function t(key, vars) {
+  let s = (I18N[locale] && I18N[locale][key]) || I18N.en[key] || key;
+  if (vars) for (const k in vars) s = s.split("{" + k + "}").join(String(vars[k]));
+  return s;
+}
+
+function applyStatic() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.innerHTML = t(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+    el.setAttribute("placeholder", t(el.getAttribute("data-i18n-ph")));
+  });
+  document.querySelectorAll(".lang-toggle button").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-lang") === locale);
+  });
+}
+
+function setLocale(next) {
+  locale = next;
+  try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* ignore */ }
+  applyStatic();
+}
+
+document.querySelectorAll(".lang-toggle button").forEach((b) => {
+  b.addEventListener("click", () => setLocale(b.getAttribute("data-lang")));
+});
 
 function showError(msg) {
   $err.textContent = msg || "";
@@ -136,7 +226,7 @@ async function openPath(path) {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.ok) {
-      showError(body.detail || `Erreur ${res.status}`);
+      showError(body.detail || t("error_status", { status: res.status }));
       return;
     }
     window.location.href = "/";
@@ -150,14 +240,14 @@ async function openPath(path) {
 function renderRecents(items) {
   const box = $("recents");
   if (!items.length) {
-    box.innerHTML = '<div class="empty">Aucun dépôt ouvert récemment.</div>';
+    box.innerHTML = '<div class="empty">' + t("no_recent") + "</div>";
     return;
   }
   box.innerHTML = "";
   for (const it of items) {
     const row = document.createElement("div");
     row.className = "row";
-    row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">Ouvrir</button>`;
+    row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">${t("open")}</button>`;
     row.querySelector(".name").textContent = it.name || "?";
     row.querySelector(".path").textContent = it.path;
     row.querySelector(".btn").addEventListener("click", (e) => { e.stopPropagation(); openPath(it.path); });
@@ -181,23 +271,23 @@ $("scanBtn").addEventListener("click", async () => {
   const box = $("scanResults");
   const btn = $("scanBtn");
   showError("");
-  if (!root) { showError("Indique un dossier racine."); return; }
+  if (!root) { showError(t("need_root")); return; }
   btn.disabled = true;
   box.hidden = false;
-  box.innerHTML = '<div class="empty"><span class="spinner"></span> Scan en cours…</div>';
+  box.innerHTML = '<div class="empty">' + t("scanning") + "</div>";
   try {
     const res = await fetch(`/repos/browse?root=${encodeURIComponent(root)}&depth=${depth}`);
     const data = await res.json();
     const items = data.items || [];
     if (!items.length) {
-      box.innerHTML = '<div class="empty">Aucun dépôt git trouvé ici.</div>';
+      box.innerHTML = '<div class="empty">' + t("no_git_found") + "</div>";
       return;
     }
     box.innerHTML = "";
     for (const it of items) {
       const row = document.createElement("div");
       row.className = "row";
-      row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">Ouvrir</button>`;
+      row.innerHTML = `<span class="name"></span><span class="path"></span><button class="btn">${t("open")}</button>`;
       row.querySelector(".name").textContent = it.name;
       row.querySelector(".path").textContent = it.path;
       row.querySelector(".btn").addEventListener("click", (e) => { e.stopPropagation(); openPath(it.path); });
@@ -205,7 +295,7 @@ $("scanBtn").addEventListener("click", async () => {
       box.appendChild(row);
     }
   } catch (e) {
-    box.innerHTML = '<div class="empty">Erreur pendant le scan.</div>';
+    box.innerHTML = '<div class="empty">' + t("scan_error") + "</div>";
   } finally {
     btn.disabled = false;
   }
@@ -213,12 +303,13 @@ $("scanBtn").addEventListener("click", async () => {
 
 $("openBtn").addEventListener("click", () => {
   const path = $("manual").value.trim();
-  if (!path) { showError("Indique un chemin absolu."); return; }
+  if (!path) { showError(t("need_path")); return; }
   openPath(path);
 });
 $("manual").addEventListener("keydown", (e) => { if (e.key === "Enter") $("openBtn").click(); });
 $("root").addEventListener("keydown", (e) => { if (e.key === "Enter") $("scanBtn").click(); });
 
+applyStatic();
 loadRecents();
 </script>
 </body>

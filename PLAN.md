@@ -1,99 +1,99 @@
-# PLAN.md — Visualiseur Git Web (Python) avec rendu "swimlanes" ultra fidèle
+# PLAN.md — Web Git Visualizer (Python) with ultra-faithful "swimlanes" rendering
 
-> Document autonome pour un agent **non multimodal** (sans accès image).
+> Standalone document for a **non-multimodal** agent (no image access).
 > 
-> Objectif: implémenter une application web-only qui reproduit un rendu de client Git visuel **dense, clair, coloré, professionnel**, avec graphe de commits en swimlanes pastel, mini-timeline en haut, et métadonnées alignées à droite.
+> Objective: implement a web-only application that reproduces a visual Git client rendering that is **dense, clear, colorful, and professional**, with a pastel swimlane commit graph, a mini timeline at the top, and metadata aligned to the right.
 
 ---
 
-## 1) Cible produit (résumé exécutable)
+## 1) Product target (executable summary)
 
-Construire un outil web local qui:
+Build a local web tool that:
 
-- ouvre un dépôt Git local,
-- lit son historique,
-- calcule un layout de graphe en lanes,
-- rend une interface compacte type "table + graphe intégré",
-- reste fluide sur gros historiques.
+- opens a local Git repository,
+- reads its history,
+- computes a lane-based graph layout,
+- renders a compact "table + integrated graph" interface,
+- stays fluid on large histories.
 
 ### 1.1 Must-have v1
 
-1. Ouverture d'un repo local.
-2. Liste des commits virtualisée (dense).
-3. Graphe en swimlanes colorées avec merges/forks lisibles.
-4. Badges refs (local branch, remote, tag, HEAD).
-5. Colonne droite: date relative, SHA court, status dots.
-6. Mini timeline horizontale en haut.
-7. Recherche instantanée (message/sha/auteur/ref).
-8. Refresh auto quand le repo change.
+1. Opening a local repo.
+2. Virtualized (dense) commit list.
+3. Colored swimlane graph with readable merges/forks.
+4. Ref badges (local branch, remote, tag, HEAD).
+5. Right column: relative date, short SHA, status dots.
+6. Horizontal mini timeline at the top.
+7. Instant search (message/sha/author/ref).
+8. Auto refresh when the repo changes.
 
-### 1.2 Hors périmètre v1
+### 1.2 Out of scope v1
 
-- Pas de merge/rebase/reset UI.
-- Pas d'intégration PR cloud.
-- Pas de conflit editor.
+- No merge/rebase/reset UI.
+- No cloud PR integration.
+- No conflict editor.
 
 ---
 
-## 2) Description visuelle cible (sans image)
+## 2) Target visual description (without image)
 
-Cette section est la référence visuelle à respecter strictement.
+This section is the visual reference to be strictly followed.
 
-### 2.1 Impression générale
+### 2.1 General impression
 
-- Interface en **thème clair** (pas dark par défaut).
-- Fond global légèrement gris-bleu.
-- Panneaux blancs avec bordures fines.
-- Densité élevée: beaucoup de commits visibles en même temps.
-- Design net, orienté productivité, sans effet gadget.
+- **Light theme** interface (not dark by default).
+- Overall background slightly gray-blue.
+- White panels with thin borders.
+- High density: many commits visible at the same time.
+- Clean, productivity-oriented design, no gimmick effects.
 
-### 2.2 Structure de l'écran
+### 2.2 Screen structure
 
-L'écran est organisé en 3 bandes verticales + un bandeau haut:
+The screen is organized into 3 vertical bands + a top banner:
 
-1. **Toolbar** en haut (environ 48 px).
-2. **Mini timeline** juste dessous (environ 56 px, dont 40 px utiles).
-3. **Zone principale** occupant le reste:
-   - zone gauche pour message/filtres,
-   - zone centrale pour graphe lanes,
-   - zone droite pour méta (temps/SHA/status).
+1. **Toolbar** at the top (about 48 px).
+2. **Mini timeline** just below (about 56 px, of which 40 px usable).
+3. **Main area** occupying the rest:
+   - left zone for message/filters,
+   - central zone for the lane graph,
+   - right zone for meta (time/SHA/status).
 
-### 2.3 Densité lignes
+### 2.3 Row density
 
-- Hauteur de ligne commit: **32 px** par défaut.
-- Option confortable: 36 px.
-- Padding horizontal cellules: 10 à 12 px.
-- Texte compact et tronqué proprement (ellipsis).
+- Commit row height: **32 px** by default.
+- Comfortable option: 36 px.
+- Horizontal cell padding: 10 to 12 px.
+- Compact text cleanly truncated (ellipsis).
 
 ### 2.4 Swimlanes
 
-- Multiples lanes colorées pastel visibles simultanément.
-- Traits principalement verticaux.
-- Courbes douces pour merges/forks (bezier), pas d'angles cassés.
-- Nœuds commit centrés sur chaque ligne.
-- Couleurs stables lane-to-lane.
+- Multiple pastel colored lanes visible simultaneously.
+- Lines primarily vertical.
+- Smooth curves for merges/forks (bezier), no broken angles.
+- Commit nodes centered on each row.
+- Colors stable lane-to-lane.
 
-### 2.5 Informations dans chaque ligne
+### 2.5 Information in each row
 
-- Message commit principal (1 ligne tronquée).
-- Badges refs arrondis (pills).
-- Avatar auteur (petit cercle).
-- Date relative (ex: "3 hours ago").
-- SHA court monospace.
-- Statuts par petits points colorés.
+- Main commit message (1 truncated line).
+- Rounded ref badges (pills).
+- Author avatar (small circle).
+- Relative date (e.g. "3 hours ago").
+- Monospace short SHA.
+- Statuses as small colored dots.
 
-### 2.6 Mini timeline haut
+### 2.6 Top mini timeline
 
-- Tracé d'activité fin, style sparkline/histogramme doux.
-- Couleurs discrètes cohérentes avec lanes.
-- Vue globale de l'historique.
-- Rectangle viewport pour indiquer la fenêtre visible actuelle.
+- Thin activity trace, soft sparkline/histogram style.
+- Discreet colors consistent with the lanes.
+- Global overview of the history.
+- Viewport rectangle indicating the current visible window.
 
 ---
 
-## 3) Design System détaillé
+## 3) Detailed Design System
 
-## 3.1 Couleurs (tokens obligatoires)
+## 3.1 Colors (mandatory tokens)
 
 ```css
 :root {
@@ -128,70 +128,70 @@ L'écran est organisé en 3 bandes verticales + un bandeau haut:
 }
 ```
 
-## 3.2 Typographie
+## 3.2 Typography
 
 - UI: `Manrope`, fallback `Segoe UI`, sans-serif.
 - Tech (SHA): `JetBrains Mono`, fallback `Consolas`, monospace.
-- Tailles:
+- Sizes:
   - toolbar: 12-13 px
-  - message commit: 12.5-13 px
-  - méta/date: 11-12 px
-  - badges refs: 10.5-11 px
+  - commit message: 12.5-13 px
+  - meta/date: 11-12 px
+  - ref badges: 10.5-11 px
 
-## 3.3 Espacements et effets
+## 3.3 Spacing and effects
 
-- Grille 4 px: 4/8/12/16.
-- Radius panneaux: 10 px.
-- Ombre légère panneaux: `0 1px 2px rgba(16,24,40,.06)`.
-- Bordure: 1 px `--border-soft`.
-- Pas de blur lourd.
+- 4 px grid: 4/8/12/16.
+- Panel radius: 10 px.
+- Light panel shadow: `0 1px 2px rgba(16,24,40,.06)`.
+- Border: 1 px `--border-soft`.
+- No heavy blur.
 
 ---
 
-## 4) Spécification composants UI
+## 4) UI component specification
 
 ## 4.1 TopToolbar
 
-Contenu de gauche à droite:
+Contents from left to right:
 
-1. Nom repo + icône.
-2. Branche courante (pill).
-3. Filtres / scope refs.
-4. Recherche.
-5. Actions légères (refresh, settings).
+1. Repo name + icon.
+2. Current branch (pill).
+3. Filters / ref scope.
+4. Search.
+5. Light actions (refresh, settings).
 
-Règles:
+Rules:
 
-- Hauteur 48 px.
-- Fond blanc.
-- Border-bottom fine.
-- Contrôles compacts, pas de boutons volumineux.
+- Height 48 px.
+- White background.
+- Thin border-bottom.
+- Compact controls, no bulky buttons.
 
 ## 4.2 MiniTimeline
 
-- Hauteur conteneur 56 px.
-- Zone dessin ~40 px centrée verticalement.
-- Tracé activité: ligne fine (1-1.5 px) + petits pics.
-- Viewport rectangle: fond alpha faible + contour bleu clair.
-- Scroll de la liste doit mettre à jour ce viewport.
+- Container height 56 px.
+- Drawing zone ~40 px centered vertically.
+- Activity trace: thin line (1-1.5 px) + small peaks.
+- Viewport rectangle: low-alpha fill + light blue outline.
+- Scrolling the list must update this viewport.
 
-## 4.3 CommitTable intégrée au graphe
+## 4.3 CommitTable integrated with the graph
 
-Chaque row contient visuellement:
+Each row visually contains:
 
-1. Zone lanes (gauche/centre)
-2. Message commit
-3. Badges refs
-4. Avatar auteur
-5. Date relative
-6. SHA court
+1. Lane zone (left/center)
+2. Commit message
+3. Ref badges
+4. Author avatar
+5. Relative date
+6. Short SHA
 7. Status dots
 
-Comportements:
+Behaviors:
 
-- hover row: fond `--bg-row-hover`, nœud commit avec halo léger.
-- selected row: fond `--bg-row-selected` + accent vertical bleu.
-- alternance discrète pair/impair.
+- hover row: background `--bg-row-hover`, commit node with a light halo.
+- selected row: background `--bg-row-selected` + vertical blue accent.
+- discreet even/odd alternation.
 
 ## 4.4 RefsPills
 
@@ -204,62 +204,62 @@ Styles:
 
 Mapping:
 
-- local branch: fond vert très pâle, texte vert foncé.
-- remote branch: fond bleu pâle, texte bleu foncé.
-- tag: fond orange pâle, texte orange foncé.
-- HEAD/current: contour accent + dot.
+- local branch: very pale green background, dark green text.
+- remote branch: pale blue background, dark blue text.
+- tag: pale orange background, dark orange text.
+- HEAD/current: accent outline + dot.
 
 ## 4.5 Avatars
 
-- Diamètre 16 px.
-- Cercle.
+- Diameter 16 px.
+- Circle.
 - Border `1px #fff`.
-- Ombre minime.
-- Fallback initiales.
+- Minimal shadow.
+- Initials fallback.
 
 ## 4.6 RightMeta
 
-- Date relative: texte secondaire.
-- SHA court: monospace.
+- Relative date: secondary text.
+- Short SHA: monospace.
 - Status dots:
-  - diamètre 6 px,
+  - diameter 6 px,
   - gap 4 px,
-  - 3 à 5 points,
-  - vert/rouge/gris.
+  - 3 to 5 dots,
+  - green/red/gray.
 
 ---
 
-## 5) Rendu Canvas du graphe (obligatoire)
+## 5) Canvas rendering of the graph (mandatory)
 
-## 5.1 Pourquoi Canvas
+## 5.1 Why Canvas
 
-- Plus fluide que SVG pour grands historiques.
-- Contrôle fin des traits et overlays.
+- Smoother than SVG for large histories.
+- Fine control of lines and overlays.
 
-## 5.2 Dimensions recommandées
+## 5.2 Recommended dimensions
 
-- Ecart lane: 18 à 22 px.
-- Width trait lane: 2 px.
-- Nœud commit: diamètre 8-10 px, centre 3 px.
+- Lane spacing: 18 to 22 px.
+- Lane line width: 2 px.
+- Commit node: diameter 8-10 px, center 3 px.
 
-## 5.3 Couches de rendu (ordre)
+## 5.3 Rendering layers (order)
 
-1. Fond rows alternées.
-2. Segments lanes (vertical + courbes).
-3. Nœuds commits.
+1. Alternating row backgrounds.
+2. Lane segments (vertical + curves).
+3. Commit nodes.
 4. Hover/selected overlay.
-5. Décorations (si besoin).
+5. Decorations (if needed).
 
-## 5.4 Paramètres de dessin
+## 5.4 Drawing parameters
 
 - `lineCap = round`
 - `lineJoin = round`
-- Gestion `devicePixelRatio` pour netteté.
-- Courbes via bezier pour forks/merges.
+- `devicePixelRatio` handling for sharpness.
+- Curves via bezier for forks/merges.
 
 ---
 
-## 6) Backend Python — architecture
+## 6) Python backend — architecture
 
 ## 6.1 Modules
 
@@ -285,17 +285,17 @@ backend/
   tests/
 ```
 
-## 6.2 Rôle des services
+## 6.2 Role of the services
 
-- `git_reader.py`: extraction commits/parents/refs/auteurs.
-- `lane_layout.py`: attribution lanes + segments.
-- `timeline_builder.py`: données agrégées mini timeline.
-- `cache.py`: cache LRU par repo/query.
-- `watcher.py`: surveillance `.git` + events websocket.
+- `git_reader.py`: extraction of commits/parents/refs/authors.
+- `lane_layout.py`: lane assignment + segments.
+- `timeline_builder.py`: aggregated data for the mini timeline.
+- `cache.py`: LRU cache per repo/query.
+- `watcher.py`: `.git` watching + websocket events.
 
 ---
 
-## 7) Modèle de données API (contrat strict)
+## 7) API data model (strict contract)
 
 ## 7.1 Open repo
 
@@ -324,7 +324,7 @@ Response:
 
 `GET /history?cursor=&limit=&q=&ref=`
 
-Response item minimal:
+Minimal response item:
 
 ```json
 {
@@ -377,7 +377,7 @@ Envelope:
 
 `GET /refs`
 
-Retourne branches locales, remotes, tags, HEAD.
+Returns local branches, remotes, tags, HEAD.
 
 ## 7.4 Events
 
@@ -391,40 +391,40 @@ Events:
 
 ---
 
-## 8) Algorithme lanes (détaillé)
+## 8) Lane algorithm (detailed)
 
-## 8.1 Objectif
+## 8.1 Objective
 
-Produire un graphe lisible et stable entre refresh/pagination.
+Produce a graph that is readable and stable across refresh/pagination.
 
-## 8.2 Étapes
+## 8.2 Steps
 
-1. Charger commits en ordre topologique (secondairement par date).
-2. Maintenir structure `active_lanes`.
-3. Pour chaque commit:
-   - si lane déjà réservée: réutiliser,
-   - sinon prendre la lane libre la plus à gauche.
-4. Dessiner segment vertical lane courante.
-5. Parent principal:
-   - prolonger lane.
-6. Parents secondaires:
-   - créer courbes vers lane parent.
-7. Libérer lanes inactives.
-8. Persister mapping lane sur fenêtre pour stabilité.
+1. Load commits in topological order (secondary sort by date).
+2. Maintain an `active_lanes` structure.
+3. For each commit:
+   - if a lane is already reserved: reuse it,
+   - otherwise take the leftmost free lane.
+4. Draw the vertical segment of the current lane.
+5. Primary parent:
+   - extend the lane.
+6. Secondary parents:
+   - create curves toward the parent lane.
+7. Release inactive lanes.
+8. Persist the lane mapping over the window for stability.
 
-## 8.3 Contraintes visuelles du layout
+## 8.3 Visual constraints of the layout
 
-- Minimiser croisements.
-- Eviter oscillation lane d'un commit à l'autre.
-- Prioriser continuité de la branche principale.
+- Minimize crossings.
+- Avoid lane oscillation from one commit to the next.
+- Prioritize continuity of the main branch.
 
-## 8.4 Jeux de tests layout
+## 8.4 Layout test datasets
 
-- linéaire simple,
+- simple linear,
 - 1 merge,
-- branche longue puis merge,
+- long branch then merge,
 - octopus merge,
-- racine multiple,
+- multiple roots,
 - dense refs.
 
 ---
@@ -459,201 +459,201 @@ frontend/
       app.css
 ```
 
-## 9.2 Responsabilités
+## 9.2 Responsibilities
 
-- `GraphCanvas`: rendu lanes/nœuds.
-- `CommitTable`: virtualisation + synchronisation scroll.
+- `GraphCanvas`: rendering of lanes/nodes.
+- `CommitTable`: virtualization + scroll synchronization.
 - `MiniTimeline`: overview + viewport.
-- `store`: état sélection, filtres, data pages.
+- `store`: selection state, filters, data pages.
 
 ---
 
-## 10) UX interactions obligatoires
+## 10) Mandatory UX interactions
 
-1. Scroll fluide (liste + graphe synchronisés).
-2. Hover commit met en évidence row + nœud.
-3. Click commit sélectionne row.
-4. Recherche en direct avec highlight.
-5. Auto-refresh non intrusif sur nouveaux commits.
+1. Smooth scroll (list + graph synchronized).
+2. Hovering a commit highlights the row + node.
+3. Clicking a commit selects the row.
+4. Live search with highlighting.
+5. Non-intrusive auto-refresh on new commits.
 
-### 10.1 Raccourcis clavier v1
+### 10.1 Keyboard shortcuts v1
 
-- `j` / `k`: commit suivant/précédent.
-- `/`: focus recherche.
-- `enter`: ouvrir panneau détail (ou noop v1).
-- `esc`: clear recherche.
+- `j` / `k`: next/previous commit.
+- `/`: focus search.
+- `enter`: open detail panel (or noop in v1).
+- `esc`: clear search.
 
 ---
 
 ## 11) Performance budget
 
-- Payload initial `/history` (300 commits): < 1.2 MB compressé.
-- Temps premier rendu utile: < 2.5 s repo moyen.
-- Scroll perçu: 55-60 fps cible.
-- Budget draw frame: < 8-10 ms.
+- Initial `/history` payload (300 commits): < 1.2 MB compressed.
+- First meaningful render time: < 2.5 s on an average repo.
+- Perceived scroll: 55-60 fps target.
+- Frame draw budget: < 8-10 ms.
 
-Optimisations:
+Optimizations:
 
-- virtualisation rows,
-- mémoïsation des segments,
-- découpage en pages (300 + prefetch 100),
-- cache backend LRU,
-- debounce recherche (100-150 ms).
+- row virtualization,
+- segment memoization,
+- pagination (300 + prefetch 100),
+- backend LRU cache,
+- search debounce (100-150 ms).
 
 ---
 
-## 12) Tests et QA
+## 12) Tests and QA
 
 ## 12.1 Backend
 
-- Unit tests `lane_layout.py`.
-- Contract tests API (pydantic).
-- Snapshot JSON segments.
+- Unit tests for `lane_layout.py`.
+- API contract tests (pydantic).
+- JSON snapshots of segments.
 
 ## 12.2 Frontend
 
-- Unit tests formatters.
-- Tests de rendu canvas (smoke + snapshots).
-- E2E Playwright:
+- Unit tests for formatters.
+- Canvas rendering tests (smoke + snapshots).
+- Playwright E2E:
   - open repo,
   - scroll,
   - select,
   - search,
-  - refresh après nouveau commit.
+  - refresh after a new commit.
 
-## 12.3 Visuel (acceptation)
+## 12.3 Visual (acceptance)
 
-- Comparer captures aux critères section 2/3.
-- Valider densité, couleurs, alignements, lisibilité.
+- Compare screenshots against the criteria in sections 2/3.
+- Validate density, colors, alignments, readability.
 
 ---
 
-## 13) Plan d'exécution par phases
+## 13) Phase-by-phase execution plan
 
-## Phase A (S1) — Fondations
+## Phase A (W1) — Foundations
 
-Livrables:
+Deliverables:
 
-- Backend FastAPI opérationnel.
-- Ouverture repo local.
-- Endpoint history brut.
-- Front list simple.
+- Working FastAPI backend.
+- Local repo opening.
+- Raw history endpoint.
+- Simple frontend list.
 
-Done si:
+Done when:
 
-- on voit commits texte sans crash.
+- text commits are visible without crashes.
 
-## Phase B (S2-S3) — Moteur lanes
+## Phase B (W2-W3) — Lane engine
 
-Livrables:
+Deliverables:
 
 - lane allocator,
-- segments graph,
-- API history enrichie,
-- tests unitaires layout.
+- graph segments,
+- enriched history API,
+- layout unit tests.
 
-Done si:
+Done when:
 
-- cas merges/forks corrects.
+- merge/fork cases are correct.
 
-## Phase C (S4-S5) — Fidélité visuelle
+## Phase C (W4-W5) — Visual fidelity
 
-Livrables:
+Deliverables:
 
-- layout complet toolbar/timeline/main,
-- canvas multicouches,
-- refs pills, avatars, right meta,
-- thème pastel compact.
+- complete toolbar/timeline/main layout,
+- multi-layer canvas,
+- ref pills, avatars, right meta,
+- compact pastel theme.
 
-Done si:
+Done when:
 
-- rendu visuellement conforme à cette spec.
+- rendering is visually compliant with this spec.
 
-## Phase D (S6) — Interactions + perf
+## Phase D (W6) — Interactions + performance
 
-Livrables:
+Deliverables:
 
 - virtual scroll sync,
-- recherche live,
+- live search,
 - websocket updates,
-- optimisation draw.
+- draw optimization.
 
-Done si:
+Done when:
 
-- fluidité satisfaisante gros repo.
+- fluidity is satisfactory on a large repo.
 
-## Phase E (S7) — QA/polish
+## Phase E (W7) — QA/polish
 
-Livrables:
+Deliverables:
 
-- états loading/error/empty,
+- loading/error/empty states,
 - responsive,
 - e2e,
-- docs run/deploy.
+- run/deploy docs.
 
-Done si:
+Done when:
 
-- checklist finale validée.
-
----
-
-## 14) Checklist finale bloquante (Go/No-Go)
-
-- [ ] Thème clair compact conforme.
-- [ ] Toolbar + mini timeline présents.
-- [ ] Swimlanes pastel courbes lisibles.
-- [ ] Rows denses (32 px) et stables.
-- [ ] Refs pills colorées bien typées.
-- [ ] Avatar + date + SHA + status dots visibles par ligne.
-- [ ] Recherche instantanée utilisable.
-- [ ] Refresh auto sans rupture d'UX.
-- [ ] Performance acceptable sur gros historique.
-- [ ] Code testé (unit + e2e minimal).
+- final checklist validated.
 
 ---
 
-## 15) Déploiement et exécution
+## 14) Blocking final checklist (Go/No-Go)
+
+- [ ] Compliant compact light theme.
+- [ ] Toolbar + mini timeline present.
+- [ ] Pastel swimlanes with readable curves.
+- [ ] Dense (32 px) and stable rows.
+- [ ] Colored ref pills properly typed.
+- [ ] Avatar + date + SHA + status dots visible per row.
+- [ ] Instant search usable.
+- [ ] Auto refresh without UX breakage.
+- [ ] Acceptable performance on large history.
+- [ ] Tested code (unit + minimal e2e).
+
+---
+
+## 15) Deployment and execution
 
 ## 15.1 Dev
 
 - Backend: `uvicorn app.main:app --reload`
-- Frontend: `npm run dev` (ou `pnpm`, `bun` selon choix)
+- Frontend: `npm run dev` (or `pnpm`, `bun` depending on choice)
 
 ## 15.2 Prod
 
-- Build frontend statique + reverse proxy vers API.
-- Option Docker Compose (api + web).
+- Static frontend build + reverse proxy to the API.
+- Docker Compose option (api + web).
 
 ---
 
-## 16) Sécurité / robustesse
+## 16) Security / robustness
 
-- Valider chemin repo (pas traversal).
-- Timeout sur fallback CLI git.
-- Pas d'exécution shell arbitraire depuis UI.
-- Gestion erreurs repo corrompu / permission refusée.
-
----
-
-## 17) Consignes directes pour l'agent implémenteur
-
-1. Respecter strictement cette spec visuelle.
-2. Prioriser lisibilité du graphe avant features annexes.
-3. Utiliser Canvas + virtualisation obligatoirement.
-4. Produire commits atomiques par phase.
-5. Après chaque phase, fournir:
-   - fonctionnalités livrées,
-   - captures,
-   - écarts vs PLAN.md,
-   - plan de correction.
+- Validate the repo path (no traversal).
+- Timeout on the git CLI fallback.
+- No arbitrary shell execution from the UI.
+- Error handling for corrupted repo / permission denied.
 
 ---
 
-## 18) Définition de réussite finale
+## 17) Direct instructions for the implementing agent
 
-Le résultat est validé si un utilisateur perçoit immédiatement:
+1. Strictly follow this visual spec.
+2. Prioritize graph readability over ancillary features.
+3. Use Canvas + virtualization mandatorily.
+4. Produce atomic commits per phase.
+5. After each phase, provide:
+   - delivered features,
+   - screenshots,
+   - deviations vs PLAN.md,
+   - correction plan.
 
-- un visualiseur Git "swimlanes" dense et pro,
-- une lecture claire des branches/merges,
-- un rendu compact, pastel, informatif,
-- et une fluidité suffisante pour usage quotidien.
+---
+
+## 18) Final definition of success
+
+The result is validated if a user immediately perceives:
+
+- a dense, professional "swimlanes" Git visualizer,
+- a clear reading of branches/merges,
+- a compact, pastel, informative rendering,
+- and enough fluidity for daily use.

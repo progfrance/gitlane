@@ -7,6 +7,7 @@ import {
 } from "../api/client";
 import { useRepoEvents } from "../api/events";
 import { repoStore } from "../store/useRepoStore";
+import { useI18n } from "../i18n";
 import TopToolbar from "../components/TopToolbar";
 import MiniTimeline from "../components/MiniTimeline";
 import VirtualCommitTable from "../components/VirtualCommitTable";
@@ -20,6 +21,7 @@ function useStore() {
 
 export default function App() {
   const s = useStore();
+  const { t } = useI18n();
   const [pathInput, setPathInput] = useState(DEFAULT_REPO);
   const [scroll, setScroll] = useState({ top: 0, height: 1, client: 1 });
   const searchRef = useRef<HTMLInputElement>(null);
@@ -213,22 +215,22 @@ export default function App() {
       <div className="main-area">
         <div className="commit-panel">
           {s.status === "loading" && !items.length && (
-            <div className="state-block"><div className="spinner" /><span>Loading repository…</span></div>
+            <div className="state-block"><div className="spinner" /><span>{t("loading_repo")}</span></div>
           )}
           {s.status === "error" && (
             <div className="state-block error">
-              <span className="state-title">Failed to open repository</span>
+              <span className="state-title">{t("failed_open")}</span>
               <span>{s.error}</span>
               <div className="repo-picker">
                 <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} />
-                <button className="toolbar-btn" onClick={() => void load(pathInput, s.query)}>Open</button>
+                <button className="toolbar-btn" onClick={() => void load(pathInput, s.query)}>{t("open")}</button>
               </div>
             </div>
           )}
           {s.status !== "error" && items.length === 0 && s.status !== "loading" && (
             <div className="state-block">
-              <span className="state-title">No commits</span>
-              <span>{s.query ? `No result for “${s.query}”` : `This repository has no commits on ${s.activeRef}`}</span>
+              <span className="state-title">{t("no_commits")}</span>
+              <span>{s.query ? t("no_result", { query: s.query }) : t("no_commits_on", { ref: s.activeRef })}</span>
             </div>
           )}
           {items.length > 0 && (
@@ -254,7 +256,7 @@ export default function App() {
         </div>
         {s.lastFetchMs != null && (
           <div style={{ textAlign: "right", fontSize: 10.5, color: "var(--text-muted)", padding: "6px 2px 0" }}>
-            {items.length} rows · loaded in {s.lastFetchMs} ms
+            {t("rows_loaded", { n: items.length, ms: s.lastFetchMs })}
           </div>
         )}
       </div>
