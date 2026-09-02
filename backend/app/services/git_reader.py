@@ -223,13 +223,13 @@ def relative_time(timestamp: int, now: int | None = None) -> str:
 
 
 def read_remote(repo_path: str) -> str | None:
-    """Return a web URL base for the repo's origin remote (GitHub only).
+    """Return a safe web URL base for the repo's origin remote (GitHub hosts).
 
-    Handles https, git@ and ssh:// forms:
-      https://github.com/owner/repo.git  -> https://github.com/owner/repo
-      git@github.com:owner/repo.git      -> https://github.com/owner/repo
-      ssh://git@github.com/owner/repo.git-> https://github.com/owner/repo
-    Returns None when no origin remote or not a GitHub URL.
+    Supports public and enterprise hosts, and strips credentials if present:
+      https://token@github.example.com/org/repo.git -> https://github.example.com/org/repo
+      git@github.example.com:org/repo.git           -> https://github.example.com/org/repo
+      ssh://git@github.example.com/org/repo.git     -> https://github.example.com/org/repo
+    Returns None when no origin remote or when the host is not GitHub-like.
     """
     import re
 
@@ -239,8 +239,28 @@ def read_remote(repo_path: str) -> str | None:
         return None
     if not url:
         return None
-    m = re.match(r"(?:https?://|git@|ssh://git@)github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?$", url)
-    if not m:
+
+    host = owner = repo = None
+
+    # https://[user@]host/org/repo(.git)
+    m = re.match(r"https?://(?:[^@/]+@)?([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+    if m:
+        host, owner, repo = m.group(1), m.group(2), m.group(3)
+
+    # ssh://[user@]host/org/repo(.git)
+    if host is None:
+        m = re.match(r"ssh://(?:[^@/]+@)?([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+        if m:
+            host, owner, repo = m.group(1), m.group(2), m.group(3)
+
+    # [user@]host:org/repo(.git)
+    if host is None:
+        m = re.match(r"(?:[^@\s]+@)?([^:\s]+):([^/\s]+)/([^/\s]+?)(?:\.git)?$", url)
+        if m:
+            host, owner, repo = m.group(1), m.group(2), m.group(3)
+
+    if not (host and owner and repo):
         return None
-    owner, repo = m.group(1), m.group(2)
-    return f"https://github.com/{owner}/{repo}"
+    if "github" not in host.lower():
+        return None
+    return f"https://{host}/{owner}/{repo}"
