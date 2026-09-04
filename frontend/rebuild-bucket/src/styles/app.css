@@ -45,6 +45,8 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Dropdown selector (branch / repo) — spec: label above, button below. */
@@ -68,7 +70,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 320px;
+  max-width: min(320px, 32vw);
   height: 26px;
   padding: 0 8px;
   border: 1px solid var(--border-soft);
@@ -203,7 +205,7 @@ body {
 .toolbar-spacer { flex: 1; }
 
 .toolbar-search {
-  width: 260px;
+  width: clamp(150px, 22vw, 260px);
   height: 28px;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -254,6 +256,7 @@ body {
   border-radius: 8px;
   overflow: hidden;
   background: var(--bg-panel);
+  flex: 0 0 auto;
 }
 
 .lang-toggle button {
@@ -275,6 +278,24 @@ body {
 .lang-toggle button.active {
   background: var(--info);
   color: #fff;
+}
+
+.toolbar-btn {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 980px) {
+  .toolbar-count { display: none; }
+  .header-selectors { gap: 10px; }
+  .selector-button { max-width: min(220px, 30vw); }
+}
+
+@media (max-width: 760px) {
+  .toolbar-sep { display: none; }
+  .top-toolbar { gap: 6px; }
+  .header-selectors { gap: 8px; }
+  .selector-button { max-width: min(165px, 28vw); }
+  .toolbar-search { width: clamp(110px, 26vw, 170px); }
 }
 
 /* ---------- MiniTimeline (56px) ---------- */
