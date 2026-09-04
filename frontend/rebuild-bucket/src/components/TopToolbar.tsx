@@ -11,6 +11,7 @@ interface Props {
   recentRepos: { path: string; name: string }[];
   query: string;
   total: number;
+  isRefreshing: boolean;
   onQuery: (q: string) => void;
   onRefresh: () => void;
   onBranch: (ref: string) => void;
@@ -33,7 +34,7 @@ const BranchIcon = (
 );
 
 export default function TopToolbar({
-  repo, activeRef, branches, recentRepos, query, total,
+  repo, activeRef, branches, recentRepos, query, total, isRefreshing,
   onQuery, onRefresh, onBranch, onRepo, searchRef,
 }: Props) {
   const { t, locale, setLocale } = useI18n();
@@ -120,8 +121,10 @@ export default function TopToolbar({
         type="button"
         className="toolbar-btn"
         title={t("change_repo")}
+        aria-label={t("change_repo")}
         onClick={() => { window.location.href = "/picker"; }}
       >
+        <span aria-hidden="true" style={{ marginRight: 4 }}>{RepoIcon}</span>
         {t("repo_btn")}
       </button>
       <span className="toolbar-sep" />
@@ -157,8 +160,13 @@ export default function TopToolbar({
           EN
         </button>
       </div>
-      <button className="toolbar-btn" title={t("refresh")} aria-label={t("refresh")} onClick={onRefresh}>
-        <span aria-hidden="true">⟳</span>
+      <button
+        className={"toolbar-btn" + (isRefreshing ? " is-refreshing" : "")}
+        title={t("refresh")}
+        aria-label={t("refresh")}
+        onClick={onRefresh}
+      >
+        <span className="refresh-icon" aria-hidden="true">⟳</span>
       </button>
     </div>
   );

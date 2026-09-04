@@ -6,7 +6,7 @@ import os
 import time
 
 from . import git_reader
-from .cache import MAX_VIEWS_PER_REPO, RefView, RepoState
+from .cache import MAX_STATS_PER_VIEW, MAX_VIEWS_PER_REPO, RefView, RepoState
 from .lane_layout import compute_layout
 
 log = logging.getLogger("gitlane.views")
@@ -99,4 +99,11 @@ def ensure_stats(path: str, view: RefView, shas: list[str]) -> dict[str, tuple[i
             fetched = {}
         for s in missing:
             view.stats[s] = fetched.get(s, (0, 0))
+        # Cap the per-view stats dict. Most-used entries are kept by clearing
+        # only the oldest ones once we cross the threshold. dict preserves
+        # insertion order in CPython 3.7+.
+        if len(view.stats) > MAX_STATS_PER_VIEW:
+            overflow = len(view.stats) - MAX_STATS_PER_VIEW
+            for old_key in list(view.stats.keys())[:overflow]:
+                view.stats.pop(old_key, None)
     return {s: view.stats.get(s, (0, 0)) for s in shas}

@@ -247,6 +247,16 @@ body {
 
 .toolbar-btn:hover { background: var(--bg-row-hover); }
 
+.toolbar-btn .refresh-icon {
+  display: inline-block;
+  transition: transform 0.3s linear;
+}
+
+.toolbar-btn.is-refreshing .refresh-icon {
+  transform: rotate(360deg);
+  animation: spin 0.8s linear infinite;
+}
+
 /* Language toggle (FR / EN) */
 .lang-toggle {
   display: inline-flex;
@@ -680,6 +690,14 @@ body {
   z-index: 200;
 }
 
+.detail-drawer[aria-modal="true"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: -1;
+}
+
 .detail-header {
   display: flex;
   align-items: center;
@@ -692,6 +710,16 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: var(--info);
+}
+
+.detail-shortcut-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 1px 5px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  margin-right: 6px;
 }
 
 .detail-body {
@@ -809,4 +837,68 @@ body {
 .detail-empty {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ---------- help overlay ---------- */
+
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.30);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.help-card {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.20);
+  padding: 16px 20px;
+  min-width: 280px;
+  max-width: 90vw;
+}
+
+.help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.help-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.help-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.help-table td:first-child {
+  text-align: right;
+  width: 90px;
+}
+
+.help-table tr:last-child td {
+  border-bottom: none;
+}
+
+.help-table kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  color: var(--text-main);
 }

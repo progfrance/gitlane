@@ -2,7 +2,7 @@
  *  Reference: GitKraken-style sparkline with bicolor diff histogram.
  *  Subscribes to the scroll-viewport bus directly: scrolling never
  *  re-renders the app, only this canvas. */
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { TimelineData } from "../api/client";
 import { getViewport, subscribeViewport } from "../store/viewport";
 import { useI18n } from "../i18n";
@@ -20,12 +20,27 @@ export default function MiniTimeline({ data }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewport = useSyncExternalStore(subscribeViewport, getViewport, getViewport);
   const { t } = useI18n();
+  // Force a redraw on container resize (window resize, sidebar toggle, ...).
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r) setSize({ w: r.width, h: r.height });
+    });
+    ro.observe(canvas);
+    const r = canvas.getBoundingClientRect();
+    setSize({ w: r.width, h: r.height });
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
+    const w = size.w || canvas.clientWidth;
     const h = 40;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
@@ -33,7 +48,11 @@ export default function MiniTimeline({ data }: Props) {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    if (!data || !data.points.length) return;
+    if (!data || !data.points.length) {
+      // Explicit blank — when data goes null the canvas must drop the
+      // previous timeline (e.g. after switching repos).
+      return;
+    }
 
     const pts = data.points;
     const maxC = Math.max(1, ...pts.map((p) => p.count));
@@ -120,7 +139,7 @@ export default function MiniTimeline({ data }: Props) {
       }
       ctx.restore();
     }
-  }, [data, viewport]);
+  }, [data, viewport, size.w, size.h]);
 
   const total = data?.points.reduce((n, p) => n + p.count, 0) ?? 0;
   return (

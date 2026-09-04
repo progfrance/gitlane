@@ -1,0 +1,8 @@
+node_modules/
+dist/
+wheels/
+*.min.js
+*.min.css
+backend/wheels/
+frontend/rebuild-bucket/dist/
+frontend/dist/

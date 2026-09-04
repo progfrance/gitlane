@@ -3,8 +3,14 @@
 import { LANE_COLORS } from "../graph/coords";
 
 export function avatarColor(email: string): string {
-  let h = 0;
-  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
+  // FNV-1a 32-bit: more even distribution than djb2 across short/medium
+  // email strings, so two-letter local parts rarely collide on the same
+  // lane color.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < email.length; i++) {
+    h ^= email.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
   return LANE_COLORS[h % LANE_COLORS.length];
 }
 

@@ -34,7 +34,7 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
             path=state.path,
             head=state.head,
             commit_count=len(state.commits),
-            remote=git_reader.read_remote(path),
+            remote=git_reader.read_remote(path)[1],
         ),
     )
 
@@ -118,7 +118,7 @@ def current_repo() -> RepoInfo | None:
         state = cache.require(paths[-1])
         return RepoInfo(
             name=state.name, path=state.path, head=state.head,
-            commit_count=len(state.commits), remote=git_reader.read_remote(state.path),
+            commit_count=len(state.commits), remote=git_reader.read_remote(state.path)[1],
         )
     # Cold start: reopen the most recently opened repo from persistence.
     last = recent.last_repo()
@@ -127,7 +127,7 @@ def current_repo() -> RepoInfo | None:
             state = reload_state(last)
             return RepoInfo(
                 name=state.name, path=state.path, head=state.head,
-                commit_count=len(state.commits), remote=git_reader.read_remote(state.path),
+                commit_count=len(state.commits), remote=git_reader.read_remote(state.path)[1],
             )
         except HTTPException:
             return None

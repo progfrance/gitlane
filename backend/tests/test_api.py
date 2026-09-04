@@ -199,7 +199,9 @@ class TestGitReaderRemote:
             return "git@github.com:progfrance/gitlane.git\n"
 
         monkeypatch.setattr(git_reader, "_run", fake_run)
-        assert git_reader.read_remote(str(repo)) == "https://github.com/progfrance/gitlane"
+        _status, _url = git_reader.read_remote(str(repo))
+        assert _status == git_reader.RemoteStatus.OK
+        assert _url == "https://github.com/progfrance/gitlane"
 
     def test_read_remote_https_and_git_suffix(self, tmp_path, monkeypatch):
         from app.services import git_reader
@@ -210,7 +212,9 @@ class TestGitReaderRemote:
             git_reader, "_run",
             lambda path, args, timeout=15: "https://github.com/owner/repo.git\n",
         )
-        assert git_reader.read_remote(str(repo)) == "https://github.com/owner/repo"
+        _status, _url = git_reader.read_remote(str(repo))
+        assert _status == git_reader.RemoteStatus.OK
+        assert _url == "https://github.com/owner/repo"
 
     def test_read_remote_non_github_supported(self, tmp_path, monkeypatch):
         from app.services import git_reader
@@ -221,7 +225,9 @@ class TestGitReaderRemote:
             git_reader, "_run",
             lambda path, args, timeout=15: "git@gitlab.com:owner/repo.git\n",
         )
-        assert git_reader.read_remote(str(repo)) == "https://gitlab.com/owner/repo"
+        _status, _url = git_reader.read_remote(str(repo))
+        assert _status == git_reader.RemoteStatus.OK
+        assert _url == "https://gitlab.com/owner/repo"
 
     def test_read_remote_nested_groups(self, tmp_path, monkeypatch):
         from app.services import git_reader
@@ -232,7 +238,9 @@ class TestGitReaderRemote:
             git_reader, "_run",
             lambda path, args, timeout=15: "git@gitlab.com:group/subgroup/repo.git\n",
         )
-        assert git_reader.read_remote(str(repo)) == "https://gitlab.com/group/subgroup/repo"
+        _status, _url = git_reader.read_remote(str(repo))
+        assert _status == git_reader.RemoteStatus.OK
+        assert _url == "https://gitlab.com/group/subgroup/repo"
 
     def test_read_remote_unparsable_is_none(self, tmp_path, monkeypatch):
         from app.services import git_reader
@@ -243,7 +251,9 @@ class TestGitReaderRemote:
             git_reader, "_run",
             lambda path, args, timeout=15: "not-a-valid-remote\n",
         )
-        assert git_reader.read_remote(str(repo)) is None
+        _status, _url = git_reader.read_remote(str(repo))
+        assert _status == git_reader.RemoteStatus.UNPARSEABLE
+        assert _url is None
 
     def test_read_remote_missing_remote_is_none(self, tmp_path, monkeypatch):
         from app.services import git_reader
@@ -252,7 +262,9 @@ class TestGitReaderRemote:
         repo = tmp_path / "remote-repo"
         repo.mkdir()
         monkeypatch.setattr(git_reader, "_run", lambda path, args, timeout=15: (_ for _ in ()).throw(GitError("no remote")))
-        assert git_reader.read_remote(str(repo)) is None
+        status, url = git_reader.read_remote(str(repo))
+        assert status == git_reader.RemoteStatus.NO_ORIGIN
+        assert url is None
 
 
 class TestEvents:
@@ -383,3 +395,61 @@ class TestRecentValidation:
     def test_recent_rejects_missing_dir(self, client, tmp_path):
         r = client.post("/repos/recent", json={"path": str(tmp_path / "nope")})
         assert r.status_code == 400
+
+
+class TestCommitDetailCache:
+    """GET /commit/detail is served from a server-side LRU after the first hit."""
+
+    def test_second_call_hits_cache(self, opened, client, monkeypatch):
+        from app.services import git_reader
+
+        sha = client.get("/history", params={"path": opened, "limit": 1}).json()["items"][0]["sha"]
+        # Reset the in-process cache to count a single git call.
+        git_reader.clear_detail_cache()
+        calls = []
+        real = git_reader._run
+
+        def spy(repo_path, args, **kwargs):
+            calls.append(args[0] if args else "")
+            return real(repo_path, args, **kwargs)
+
+        monkeypatch.setattr(git_reader, "_run", spy)
+        r1 = client.get("/commit/detail", params={"path": opened, "sha": sha})
+        r2 = client.get("/commit/detail", params={"path": opened, "sha": sha})
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        # The second call must NOT have spawned another `git show`.
+        show_calls = [c for c in calls if c == "show"]
+        assert len(show_calls) == 1, f"expected 1 git show, got {len(show_calls)}: {calls}"
+
+    def test_invalid_sha_not_cached(self, opened, client):
+        from app.services import git_reader
+
+        git_reader.clear_detail_cache()
+        r = client.get("/commit/detail", params={"path": opened, "sha": "zzzz"})
+        assert r.status_code == 400
+        # Caller's error path must not poison the cache.
+        git_reader.clear_detail_cache()
+
+
+class TestRemoteStatus:
+    def test_unparseable_url_is_distinct_from_no_origin(self, opened, client, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "bad-remote"
+        repo.mkdir()
+        monkeypatch.setattr(git_reader, "_run", lambda *a, **k: "ftp://example.com/x\n")
+        status, url = git_reader.read_remote(str(repo))
+        assert status == git_reader.RemoteStatus.UNPARSEABLE
+        assert url is None
+
+    def test_no_origin_keeps_status(self, opened, client, tmp_path, monkeypatch):
+        from app.services import git_reader
+        from app.services.git_reader import GitError
+
+        repo = tmp_path / "no-origin"
+        repo.mkdir()
+        monkeypatch.setattr(git_reader, "_run", lambda *a, **k: (_ for _ in ()).throw(GitError("missing")))
+        status, url = git_reader.read_remote(str(repo))
+        assert status == git_reader.RemoteStatus.NO_ORIGIN
+        assert url is None

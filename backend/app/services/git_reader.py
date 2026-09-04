@@ -8,7 +8,10 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
+from enum import Enum
 
 GIT_TIMEOUT = 15  # seconds
 
@@ -284,15 +287,27 @@ def count_commits(repo_path: str, ref: str = "HEAD") -> int:
         raise GitError(f"unexpected rev-list output: {out.strip()!r}") from exc
 
 
-def read_remote(repo_path: str) -> str | None:
-    """Return a safe web URL base for the repo's origin remote.
+class RemoteStatus(Enum):
+    """Outcome of a remote-URL probe: missing / unparseable / ok."""
+    NO_ORIGIN = "no_origin"
+    UNPARSEABLE = "unparseable"
+    OK = "ok"
 
-    Supports GitHub/GitLab/Bitbucket/Azure-style remotes and strips
-    credentials if present:
+
+def read_remote(repo_path: str) -> tuple[RemoteStatus, str | None]:
+    """Return (status, url) for the repo's `origin` remote.
+
+    Distinguishes three outcomes so the caller (or the API) can surface
+    them separately:
+      - NO_ORIGIN    : no `remote.origin.url` configured (or value empty).
+      - UNPARSEABLE  : an origin is set but its URL does not match any
+                       supported scheme (http(s), ssh://, git@host:path).
+                       Surfaces as a 4xx in the API so the user notices.
+      - OK + url     : the safe https URL to link from the UI.
+
+    The returned URL is always `https://` with credentials stripped:
       https://token@host/org/repo.git -> https://host/org/repo
-      git@host:org/repo.git           -> https://host/org/repo
-      ssh://git@host/org/repo.git     -> https://host/org/repo
-    Returns None when no origin remote is configured or parsing fails.
+      git@host:org/sub/repo.git       -> https://host/org/sub/repo
     """
     import re
     from urllib.parse import urlsplit
@@ -300,9 +315,9 @@ def read_remote(repo_path: str) -> str | None:
     try:
         url = _run(repo_path, ["config", "--get", "remote.origin.url"], timeout=5).strip()
     except GitError:
-        return None
+        return (RemoteStatus.NO_ORIGIN, None)
     if not url:
-        return None
+        return (RemoteStatus.NO_ORIGIN, None)
 
     def _strip_git_suffix(path: str) -> str:
         p = path.strip().strip("/")
@@ -311,26 +326,33 @@ def read_remote(repo_path: str) -> str | None:
         return p.strip("/")
 
     # http(s)/ssh URL forms: keep full repo path (supports nested groups).
+    # `startswith` is a fast filter, but `urlsplit` accepts any scheme
+    # (ftp, git, file, ...) — we must re-check `scheme` so a non-web URL
+    # never slips through as an OK `https://` rewrite.
     if url.startswith("http://") or url.startswith("https://") or url.startswith("ssh://"):
         parsed = urlsplit(url)
+        if parsed.scheme not in ("http", "https", "ssh"):
+            return (RemoteStatus.UNPARSEABLE, None)
         host = parsed.hostname
         if not host:
-            return None
+            return (RemoteStatus.UNPARSEABLE, None)
         host_port = f"{host}:{parsed.port}" if parsed.port else host
         repo_path = _strip_git_suffix(parsed.path)
         if not repo_path:
-            return None
-        return f"https://{host_port}/{repo_path}"
+            return (RemoteStatus.UNPARSEABLE, None)
+        return (RemoteStatus.OK, f"https://{host_port}/{repo_path}")
 
-    # SCP-like syntax: git@host:group/subgroup/repo.git
-    m = re.match(r"(?:[^@\s]+@)?([^:\s]+):(.+)$", url)
-    if m:
-        host = m.group(1)
-        repo_path = _strip_git_suffix(m.group(2))
-        if host and repo_path:
-            return f"https://{host}/{repo_path}"
+    # SCP-like syntax: git@host:group/subgroup/repo.git. Must be a single
+    # colon (no scheme prefix) and the host cannot contain `/`.
+    if "://" not in url:
+        m = re.match(r"(?:[^@\s]+@)?([^@\s/:]+):(.+)$", url)
+        if m:
+            host = m.group(1)
+            repo_path = _strip_git_suffix(m.group(2))
+            if host and repo_path:
+                return (RemoteStatus.OK, f"https://{host}/{repo_path}")
 
-    return None
+    return (RemoteStatus.UNPARSEABLE, None)
 
 
 @dataclass
@@ -375,18 +397,50 @@ def _parse_name_status(out: str) -> list[dict]:
     return files
 
 
+# LRU cache for commit-detail reads: keyboard navigation (j/k) re-selects
+# neighbours and the drawer keeps re-rendering, so 1 git call per open
+# becomes many per second. 200 entries covers the visible viewport and a
+# generous ring of recent selections.
+_DETAIL_CACHE_SIZE = 200
+_detail_cache: "OrderedDict[str, CommitDetailData]" = OrderedDict()
+_detail_lock = threading.Lock()
+
+
 def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
     """Read full detail for one commit: message, parents, files, stats.
 
     `sha` must be a hex prefix (4-40 chars); anything else is rejected as
     InvalidRefError (400-class) before touching git.
+
+    Results are cached server-side keyed by `path:sha` (LRU) so the drawer's
+    keyboard nav (j/k) does not re-run `git show` on every step. Cache is
+    intentionally process-local — git data changes invalidate implicitly
+    when the user reloads the repo via the watcher.
     """
     if not _SHA_ARG_RE.match(sha or ""):
         raise InvalidRefError(f"invalid sha: {sha!r}")
+    key = f"{repo_path}\x00{sha}"
+    with _detail_lock:
+        cached = _detail_cache.get(key)
+        if cached is not None:
+            _detail_cache.move_to_end(key)
+            return cached
+    if not _is_valid_ref(sha):
+        raise InvalidRefError(f"invalid sha: {sha!r}")
+
+    # One `git show` call with both `--name-status` and `--numstat`; the
+    # output is `\0`-separated by `git`, so we can parse both sections
+    # without a second subprocess.
     try:
-        header = _run(
+        out = _run(
             repo_path,
-            ["show", "--no-patch", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e", sha],
+            [
+                "show",
+                "--name-status",
+                "--numstat",
+                "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e",
+                sha,
+            ],
             timeout=10,
         )
     except GitError as exc:
@@ -394,31 +448,53 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
         if "unknown revision" in msg or "bad revision" in msg or "ambiguous argument" in msg:
             raise InvalidRefError(f"unknown commit: {sha!r}") from exc
         raise
-    parts = header.split("\x1e")[0].split("\x1f")
+
+    header, _, body_out = out.partition("\x1e")
+    parts = header.split("\x1f")
     if len(parts) < 7 or not parts[0].strip():
         raise InvalidRefError(f"unknown commit: {sha!r}")
     full_sha, parents, an, ae, at, subject, body = (parts + [""] * 7)[:7]
-    try:
-        files_out = _run(repo_path, ["show", "--name-status", "--format=", sha], timeout=10)
-    except GitError:
-        files_out = ""
-    stats = read_diff_stats_for_shas(repo_path, [full_sha.strip()])
-    adds, dels = stats.get(full_sha.strip(), (0, 0))
-    files = _parse_name_status(files_out)
-    # Attach per-file stats for the common case (single numstat line per path).
-    try:
-        numstat = _run(repo_path, ["show", "--numstat", "--format=", sha], timeout=10)
-        per_file: dict[str, list[int]] = {}
-        for line in numstat.splitlines():
-            bits = line.split("\t")
-            if len(bits) >= 3 and bits[0].isdigit() and bits[1].isdigit():
-                per_file[bits[2]] = [int(bits[0]), int(bits[1])]
-        for f in files:
-            if f["path"] in per_file:
-                f["additions"], f["deletions"] = per_file[f["path"]]
-    except GitError:
-        pass
-    return CommitDetailData(
+
+    # `git show` separates sections with a NUL byte. Split the body section
+    # into name-status (first half) and numstat (second half) by detecting
+    # the column count of each line.
+    files: list[dict] = []
+    per_file: dict[str, list[int]] = {}
+    total_adds = 0
+    total_dels = 0
+    if body_out:
+        for line in body_out.splitlines():
+            tabs = line.split("\t")
+            if len(tabs) == 2:
+                # name-status row: "<code>\t<path>"
+                code, rest = tabs[0], tabs[1]
+                letter = code[:1].upper()
+                if letter == "A":
+                    status = "added"
+                elif letter == "D":
+                    status = "deleted"
+                elif letter == "R":
+                    status = "renamed"
+                elif letter == "M":
+                    status = "modified"
+                else:
+                    status = "other"
+                path = rest
+                if path:
+                    files.append({"path": path, "status": status})
+            elif len(tabs) == 3 and tabs[0].isdigit() and tabs[1].isdigit():
+                # numstat row: "<adds>\t<dels>\t<path>"
+                adds, dels, path = int(tabs[0]), int(tabs[1]), tabs[2]
+                per_file[path] = [adds, dels]
+                total_adds += adds
+                total_dels += dels
+
+    for f in files:
+        if f["path"] in per_file:
+            f["additions"] = per_file[f["path"]][0]
+            f["deletions"] = per_file[f["path"]][1]
+
+    data = CommitDetailData(
         sha=full_sha.strip(),
         subject=subject,
         body=body.strip(),
@@ -426,7 +502,19 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
         author_email=ae,
         timestamp=int(at) if at.isdigit() else 0,
         parents=parents.split() if parents else [],
-        additions=adds,
-        deletions=dels,
+        additions=total_adds,
+        deletions=total_dels,
         files=files,
     )
+    with _detail_lock:
+        _detail_cache[key] = data
+        _detail_cache.move_to_end(key)
+        while len(_detail_cache) > _DETAIL_CACHE_SIZE:
+            _detail_cache.popitem(last=False)
+    return data
+
+
+def clear_detail_cache() -> None:
+    """Drop the detail cache (used by tests; the watcher does not need it)."""
+    with _detail_lock:
+        _detail_cache.clear()

@@ -19,6 +19,11 @@ log = logging.getLogger("gitlane.cache")
 
 MAX_CACHED_REPOS = 2
 MAX_VIEWS_PER_REPO = 3
+# Cap on lazily-filled diff stats per view: a long-running session on a 10k
+# repo with infinite scroll used to grow this dict unbounded. 5k entries
+# is well over the largest practical timeline (~200 buckets × few SHAs each
+# + one page worth of history); older entries are evicted FIFO.
+MAX_STATS_PER_VIEW = 5000
 
 
 @dataclass

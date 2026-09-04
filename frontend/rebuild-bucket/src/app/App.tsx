@@ -11,6 +11,8 @@ import TopToolbar from "../components/TopToolbar";
 import MiniTimeline from "../components/MiniTimeline";
 import VirtualCommitTable from "../components/VirtualCommitTable";
 import CommitDetailPanel from "../components/CommitDetail";
+import HelpOverlay from "../components/HelpOverlay";
+import { startUrlSync } from "../store/urlSync";
 import { graphWidth as computeGraphWidth } from "../graph/coords";
 
 export default function App() {
@@ -34,6 +36,8 @@ export default function App() {
 
   const { t } = useI18n();
   const [pathInput, setPathInput] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | undefined>(undefined);
@@ -152,11 +156,20 @@ export default function App() {
     repoStore.set({ query: q });
   }, []);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     const cur = repoStore.get();
-    if (cur.repoPath) void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
-    void refreshMeta(cur.repoPath, abortRef.current?.signal ?? undefined);
-  }, [load, refreshMeta]);
+    if (!cur.repoPath) return;
+    setIsRefreshing(true);
+    const { signal } = cancelInflight();
+    try {
+      await Promise.all([
+        load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef),
+        refreshMeta(cur.repoPath, signal),
+      ]);
+    } finally {
+      if (!signal.aborted) setIsRefreshing(false);
+    }
+  }, [load, refreshMeta, cancelInflight]);
 
   // Initial load: prefer the repo already open server-side (picker / last
   // session). When nothing is open anywhere, go to /picker instead of
@@ -200,13 +213,19 @@ export default function App() {
     if (cur.repoPath) void load(cur.repoPath, "", false, ref);
   }, [load, resetScrollTop]);
 
-  // Repo switch from the header selector.
+  // Repo switch from the header selector. Debounced: rapid clicks (or a
+  // burst from the WS event loop) collapse to one /repos/open call.
+  const repoSwitchTimer = useRef<number | undefined>(undefined);
   const handleRepo = useCallback((path: string) => {
     repoStore.set({ activeRef: "HEAD", query: "", selectedSha: null });
     resetScrollTop();
-    void load(path, "", true);
-    void refreshMeta(path);
+    window.clearTimeout(repoSwitchTimer.current);
+    repoSwitchTimer.current = window.setTimeout(() => {
+      void load(path, "", true);
+      void refreshMeta(path);
+    }, 200);
   }, [load, refreshMeta, resetScrollTop]);
+  useEffect(() => () => window.clearTimeout(repoSwitchTimer.current), []);
 
   // Keyboard shortcuts: Ctrl+O picker, "/" search, Escape clears, j/k moves.
   useEffect(() => {
@@ -221,6 +240,9 @@ export default function App() {
       if (e.key === "/" && !typing) {
         e.preventDefault();
         searchRef.current?.focus();
+      } else if (e.key === "?" && !typing) {
+        e.preventDefault();
+        setHelpOpen(true);
       } else if (e.key === "Escape" && typing) {
         (target as HTMLInputElement).blur();
         repoStore.set({ query: "" });
@@ -251,6 +273,9 @@ export default function App() {
   }, [load]);
 
   // Live updates: websocket events from the .git watcher.
+  // Mount once: mirror store ↔ URL hash.
+  useEffect(() => startUrlSync(), []);
+
   const repoPathForWs = repoPath != null;
   useRepoEvents((ev) => {
     const cur = repoStore.get();
@@ -281,6 +306,7 @@ export default function App() {
         query={query}
         total={total}
         onQuery={onQuery}
+        isRefreshing={isRefreshing}
         onRefresh={onRefresh}
         onBranch={handleBranch}
         onRepo={handleRepo}
@@ -303,13 +329,13 @@ export default function App() {
               </div>
             </div>
           )}
-          {status !== "error" && items.length === 0 && status !== "loading" && (
+          {status !== "error" && total === 0 && status !== "loading" && (
             <div className="state-block">
-              <span className="state-title">{t("no_commits")}</span>
+              <span className="state-title">{query ? t("no_commits") : t("no_commits")}</span>
               <span>{query ? t("no_result", { query }) : t("no_commits_on", { ref: activeRef })}</span>
             </div>
           )}
-          {items.length > 0 && (
+          {total > 0 && (
             <VirtualCommitTable
               scrollRef={scrollRef}
               items={items}
@@ -337,6 +363,7 @@ export default function App() {
         sha={selectedSha}
         onClose={() => repoStore.set({ selectedSha: null })}
       />
+      <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

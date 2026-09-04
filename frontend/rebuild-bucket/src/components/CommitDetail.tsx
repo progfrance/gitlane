@@ -1,7 +1,8 @@
 /** Commit detail drawer: message body, parents, per-file changes, stats.
  *  Opens when a row is selected; data comes from GET /commit/detail
- *  (cached client-side). Escape or the close button dismisses it. */
-import { useEffect, useState } from "react";
+ *  (cached client-side and server-side). Escape or the close button
+ *  dismisses it. Tab/Shift+Tab cycle within the drawer (focus trap). */
+import { useEffect, useRef, useState } from "react";
 import { fetchCommitDetail, isAbort, type CommitDetail as Detail } from "../api/client";
 import { formatRelativeTime, useI18n } from "../i18n";
 import Avatar from "./Avatar";
@@ -22,11 +23,15 @@ function statusClass(status: string): string {
   }
 }
 
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
   const { t } = useI18n();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const lastFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!repoPath || !sha) {
@@ -52,10 +57,51 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
     return () => ctrl.abort();
   }, [repoPath, sha]);
 
+  // Open: capture the previously focused element, focus the first focusable
+  // in the drawer. Close: restore focus to the original element so keyboard
+  // navigation resumes where it left off.
+  useEffect(() => {
+    if (!sha) return;
+    lastFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    const root = drawerRef.current;
+    if (root) {
+      const first = root.querySelector<HTMLElement>(FOCUSABLE);
+      first?.focus();
+    }
+    return () => {
+      lastFocusRef.current?.focus?.();
+    };
+  }, [sha]);
+
+  // Escape closes; Tab/Shift+Tab cycle inside the drawer (focus trap).
   useEffect(() => {
     if (!sha) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = drawerRef.current;
+      if (!root) return;
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (focusables.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -64,8 +110,15 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
   if (!sha) return null;
 
   return (
-    <aside className="detail-drawer" role="dialog" aria-modal="false" aria-label={t("detail_title")}>
+    <aside
+      ref={drawerRef}
+      className="detail-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("detail_title")}
+    >
       <div className="detail-header">
+        <kbd className="detail-shortcut-hint" aria-hidden="true">⏎</kbd>
         <span className="detail-sha mono">{sha.slice(0, 7)}</span>
         <button type="button" className="toolbar-btn" onClick={onClose} aria-label={t("detail_close")}>
           ✕

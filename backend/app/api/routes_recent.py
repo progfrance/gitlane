@@ -22,9 +22,13 @@ def post_recent(body: RecentRepoRequest) -> list[dict]:
     """Push a repo path to the recent list (deduplicates, caps at 10).
 
     Only real git repositories are recorded — unlike an open `dict` body,
-    a stray path can no longer pollute the recents.
+    a stray path can no longer pollute the recents. Path must be absolute
+    so the normalized key matches what the picker hands back.
     """
-    path = os.path.normpath(os.path.abspath(body.path))
+    raw = body.path
+    if not os.path.isabs(raw):
+        raise HTTPException(status_code=400, detail=f"path must be absolute: {raw!r}")
+    path = os.path.normpath(os.path.abspath(raw))
     if not os.path.isdir(path):
         raise HTTPException(status_code=400, detail=f"directory not found: {path}")
     if not git_reader.is_git_repo(path):
