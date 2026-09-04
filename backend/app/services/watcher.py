@@ -7,12 +7,17 @@ decide whether a reload is needed before paying for a full history re-read
 """
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
 
 from .cache import cache
+from fastapi import HTTPException
+
 from .git_reader import GitError, count_commits, read_refs
+
+log = logging.getLogger("gitlane.watcher")
 
 POLL_INTERVAL = 2.0
 # Coalesce rapid successive writes (commit + index + logs update together).
@@ -57,28 +62,40 @@ class RepoWatcher(threading.Thread):
 
     def run(self) -> None:
         while not self._stop.wait(POLL_INTERVAL):
-            now = time.monotonic()
-            for path in cache.all_paths():
-                state = cache.get(path)
-                if state is None:
-                    continue
-                sig = _snapshot(path)
-                old = self._signatures.get(path)
-                if old is None:
-                    # First sighting after open: baseline, no event.
-                    self._signatures[path] = sig
-                    continue
-                if sig == old:
-                    continue
-                self._signatures[path] = sig
-                # Debounce: wait for the write burst to settle before re-reading.
-                self._pending[path] = now
-            for path, changed_at in list(self._pending.items()):
-                if now - changed_at >= DEBOUNCE_SECONDS:
-                    del self._pending[path]
+            try:
+                self._poll()
+            except Exception:
+                log.exception("watcher poll failed")
+                continue
+
+    def _poll(self) -> None:
+                now = time.monotonic()
+                for path in cache.all_paths():
                     state = cache.get(path)
-                    if state is not None:
-                        self._on_change(state)
+                    if state is None:
+                        continue
+                    sig = _snapshot(path)
+                    old = self._signatures.get(path)
+                    if old is None:
+                        # First sighting after open: baseline, no event.
+                        self._signatures[path] = sig
+                        continue
+                    if sig == old:
+                        continue
+                    self._signatures[path] = sig
+                    # Debounce: wait for the write burst to settle before re-reading.
+                    self._pending[path] = now
+                for path, changed_at in list(self._pending.items()):
+                    if now - changed_at >= DEBOUNCE_SECONDS:
+                        del self._pending[path]
+                        state = cache.get(path)
+                        if state is not None:
+                            self._on_change(state)
+                # Drop signatures for repos evicted from the cache (no leak).
+                for tracked in list(self._signatures):
+                    if cache.get(tracked) is None:
+                        self._signatures.pop(tracked, None)
+                        self._pending.pop(tracked, None)
 
     def _on_change(self, state) -> None:
         events: list[dict] = [{"type": "repo_updated", "path": state.path}]
@@ -107,8 +124,15 @@ class RepoWatcher(threading.Thread):
                 from ..api.routes_repo import reload_state
 
                 reload_state(state.path)
-            except (GitError, OSError):
-                pass
+            except HTTPException as exc:
+                # reload_state raises HTTPException (not GitError): catch it
+                # explicitly so a corrupted repo never kills this daemon
+                # thread silently — previously the watcher died here.
+                log.warning("reload of %s failed (%s); keeping old state", state.path, exc.detail)
+            except (GitError, OSError) as exc:
+                log.warning("reload of %s failed (%s); keeping old state", state.path, exc)
+            except Exception as exc:  # never let the daemon thread die
+                log.exception("unexpected watcher error for %s: %s", state.path, exc)
         else:
             state.refs = refs
             state.head = refs.head

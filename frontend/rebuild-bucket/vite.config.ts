@@ -15,6 +15,8 @@ export default defineConfig({
     proxy: {
       "/repos": backend,
       "/history": backend,
+      "/timeline": backend,
+      "/commit": backend,
       "/refs": backend,
       "/api": backend,
       "/events": { target: backend, ws: true },

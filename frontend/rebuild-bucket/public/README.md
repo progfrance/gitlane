@@ -4,10 +4,10 @@ Ce dossier contient le **build statique de production** de GitLane (React 18 + C
 Le backend FastAPI le sert directement à la racine (`main.py`) — aucun npm requis
 au runtime : `python -m uvicorn app.main:app` + navigateur suffisent.
 
-> `index.html` charge en plus `/static/gitlane-patches.js` (bouton "↩ Repo" + Ctrl+O,
-> injection runtime sans re-build). Ce tag est déclaré dans
-> `frontend/rebuild-bucket/index.html` et survit aux rebuilds — voir
-> `backend/app/api/static/gitlane-patches.js`.
+> Le bouton « Dépôt » et le raccourci Ctrl+O vivent désormais dans le bundle
+> React lui-même (`TopToolbar` + raccourcis `App`). L'ancien patch runtime
+> `backend/app/api/static/gitlane-patches.js` est un no-op conservé pour les
+> vieux bundles en cache — `index.html` ne le charge plus.
 
 ## Re-bundler (uniquement sur une machine avec node ≥ 18)
 
@@ -19,13 +19,12 @@ npm install
 npm run build                 # régénère ../dist/ (outDir configuré)
 ```
 
-Puis committer le nouveau `dist/` (bundle gelé). Le tag
-`<script src="/static/gitlane-patches.js">` est inclus automatiquement.
+Puis committer le nouveau `dist/` (bundle gelé).
 
 ## Contenu servi
 
 | Fichier | Rôle |
 |---|---|
-| `index.html` | Coquille React + tag patches |
-| `assets/index-*.js` | Bundle JS minifié (~160 KB) |
-| `assets/index-*.css` | Styles du design system (~7 KB) |
+| `index.html` | Coquille React |
+| `assets/index-*.js` | Bundle JS minifié (~175 KB) |
+| `assets/index-*.css` | Styles du design system (~12 KB) |

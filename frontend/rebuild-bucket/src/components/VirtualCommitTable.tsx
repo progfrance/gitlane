@@ -1,13 +1,17 @@
 /** Windowed commit table: renders only visible rows + overdraw (PLAN §11).
  *
  * The full list is positioned via absolute offsets inside a spacer div; the
- * scroller is the same element, so native scrolling stays smooth and the
- * mini-timeline viewport stays in sync via the onScroll handler.
+ * scroller is the same element, so native scrolling stays smooth.
+ * Scroll geometry is reported to the viewport bus (rAF-coalesced) so the
+ * mini-timeline viewport stays in sync without re-rendering the app.
+ * Graph width flows through the --graph-width CSS variable, set once per
+ * maxLane change on this container — rows never re-render for it.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CommitItem } from "../api/client";
 import CommitRow from "./CommitRow";
 import { ROW_HEIGHT } from "../graph/coords";
+import { reportViewport } from "../store/viewport";
 import { useI18n } from "../i18n";
 
 const OVERDRAW = 8; // rows rendered above/below the viewport
@@ -25,13 +29,12 @@ interface Props {
   onLoadMore: () => void;
   onHover: (sha: string | null) => void;
   onSelect: (sha: string) => void;
-  onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VirtualCommitTable({
+function VirtualCommitTableInner({
   items, graphWidth, remote, hoveredSha, selectedSha, query,
-  hasMore, loadingMore, onLoadMore, onHover, onSelect, onScroll, scrollRef,
+  hasMore, loadingMore, onLoadMore, onHover, onSelect, scrollRef,
 }: Props) {
   const { t } = useI18n();
   const [range, setRange] = useState({ start: 0, end: Math.min(items.length, 40) });
@@ -48,7 +51,11 @@ export default function VirtualCommitTable({
     if (!el) return;
     const first = Math.max(0, Math.floor(el.scrollTop / ROW_HEIGHT) - OVERDRAW);
     const visible = Math.ceil(el.clientHeight / ROW_HEIGHT) + 2 * OVERDRAW;
-    setRange({ start: first, end: Math.min(items.length, first + visible) });
+    setRange((prev) => {
+      const next = { start: first, end: Math.min(guard.current.length, first + visible) };
+      return prev.start === next.start && prev.end === next.end ? prev : next;
+    });
+    reportViewport({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight });
 
     // Infinite scroll: load the next page when the user nears the bottom.
     if (
@@ -58,31 +65,40 @@ export default function VirtualCommitTable({
     ) {
       guard.current.onLoadMore();
     }
-  }, [items.length, scrollRef]);
+  }, [scrollRef]);
 
-  useEffect(() => {
-    setRange({ start: 0, end: Math.min(items.length, 40) });
+  // New list (branch switch, repo switch, search): reset to top.
+  const len = items.length;
+  const firstSha = items[0]?.sha;
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = 0;
-  }, [items.length === 0]); // eslint-disable-line react-hooks/exhaustive-deps
+    setRange({ start: 0, end: Math.min(len, 40) });
+    reportViewport({ top: 0, height: el?.scrollHeight ?? 1, client: el?.clientHeight ?? 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstSha, len === 0]);
 
   useEffect(() => {
     recompute();
-  }, [recompute]);
+  }, [recompute, firstSha, len]);
 
-  const onScrollWrapped = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-      frame.current = requestAnimationFrame(recompute);
-      onScroll(e);
-    },
-    [recompute, onScroll]
-  );
+  const onScrollWrapped = useCallback(() => {
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(recompute);
+  }, [recompute]);
 
   const slice = items.slice(range.start, range.end);
 
   return (
-    <div className="commit-scroll" ref={scrollRef as React.RefObject<HTMLDivElement>} onScroll={onScrollWrapped}>
+    <div
+      className="commit-scroll"
+      ref={scrollRef as React.RefObject<HTMLDivElement>}
+      onScroll={onScrollWrapped}
+      role="grid"
+      aria-label="commits"
+      aria-rowcount={items.length}
+      style={{ "--graph-width": `${graphWidth}px` } as React.CSSProperties}
+    >
       <div style={{ height: items.length * ROW_HEIGHT, position: "relative" }}>
         <div
           style={{
@@ -97,7 +113,6 @@ export default function VirtualCommitTable({
               key={c.sha}
               commit={c}
               index={range.start + i}
-              graphWidth={graphWidth}
               remote={remote}
               hovered={hoveredSha === c.sha}
               selected={selectedSha === c.sha}
@@ -108,14 +123,28 @@ export default function VirtualCommitTable({
           ))}
         </div>
       </div>
-      <div className="commit-scroll-footer">
+      <div className="commit-scroll-footer" aria-live="polite">
         {loadingMore
           ? t("loading_more")
           : hasMore
             ? t("scroll_for_more")
             : t("end_of_history")}
       </div>
-      <style>{`.commit-rows { --graph-width: ${graphWidth}px; }`}</style>
     </div>
   );
 }
+
+// Parent passes fresh inline closures for onHover/onSelect; without a custom
+// compare the memo would be useless. Compare data, ignore callback identity.
+const VirtualCommitTable = memo(VirtualCommitTableInner, (a, b) =>
+  a.items === b.items &&
+  a.graphWidth === b.graphWidth &&
+  a.remote === b.remote &&
+  a.hoveredSha === b.hoveredSha &&
+  a.selectedSha === b.selectedSha &&
+  a.query === b.query &&
+  a.hasMore === b.hasMore &&
+  a.loadingMore === b.loadingMore &&
+  a.scrollRef === b.scrollRef,
+);
+export default VirtualCommitTable;

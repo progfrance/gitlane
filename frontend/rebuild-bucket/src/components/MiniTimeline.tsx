@@ -1,13 +1,14 @@
 /** Mini activity timeline with area fill, fine green/red bars, and viewport window.
- *  Reference: GitKraken-style sparkline with bicolor diff histogram. */
-import { useEffect, useRef } from "react";
+ *  Reference: GitKraken-style sparkline with bicolor diff histogram.
+ *  Subscribes to the scroll-viewport bus directly: scrolling never
+ *  re-renders the app, only this canvas. */
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { TimelineData } from "../api/client";
+import { getViewport, subscribeViewport } from "../store/viewport";
+import { useI18n } from "../i18n";
 
 interface Props {
   data: TimelineData | null;
-  scrollTop: number;
-  scrollHeight: number;
-  clientHeight: number;
 }
 
 const ACCENT = "#0091ff";
@@ -15,8 +16,10 @@ const AREA = "rgba(0,145,255,0.08)";
 const GREEN = "#30a46c";
 const RED = "#e54d2e";
 
-export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeight }: Props) {
+export default function MiniTimeline({ data }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewport = useSyncExternalStore(subscribeViewport, getViewport, getViewport);
+  const { t } = useI18n();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -70,7 +73,7 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
       const v = pts[i].count / maxC;
       const y = mid - v * maxBarH;
       const x = i * bw + bw / 2;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     const lastX = (pts.length - 1) * bw + bw / 2;
     ctx.lineTo(lastX, mid);
@@ -85,13 +88,14 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
       const v = pts[i].count / maxC;
       const y = mid - v * maxBarH;
       const x = i * bw + bw / 2;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.strokeStyle = ACCENT;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // Layer 4: selection band (viewport) with subtle hatch + gradient fill.
+    const { top: scrollTop, height: scrollHeight, client: clientHeight } = viewport;
     if (scrollHeight > clientHeight) {
       const vh = Math.max(10, (clientHeight / scrollHeight) * h);
       const vy = (scrollTop / scrollHeight) * h;
@@ -116,11 +120,16 @@ export default function MiniTimeline({ data, scrollTop, scrollHeight, clientHeig
       }
       ctx.restore();
     }
-  }, [data, scrollTop, scrollHeight, clientHeight]);
+  }, [data, viewport]);
 
+  const total = data?.points.reduce((n, p) => n + p.count, 0) ?? 0;
   return (
     <div className="mini-timeline">
-      <canvas ref={canvasRef} />
+      <canvas
+        ref={canvasRef}
+        role="img"
+        aria-label={t("timeline_label", { n: total })}
+      />
     </div>
   );
 }

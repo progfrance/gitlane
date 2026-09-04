@@ -90,3 +90,23 @@ class TestValidate:
     def test_missing_dir(self, client, tmp_path):
         r = client.get("/repos/validate", params={"path": str(tmp_path / "nope")})
         assert r.json()["is_git"] is False
+
+class TestBrowseGuards:
+    def test_truncated_field_present(self, client, tmp_path):
+        r = client.get("/repos/browse", params={"root": str(tmp_path), "depth": 1})
+        assert r.status_code == 200
+        assert "truncated" in r.json()
+
+    def test_skips_node_modules(self, client, tmp_path):
+        nm = tmp_path / "node_modules" / "pkg"
+        nm.mkdir(parents=True)
+        (nm / ".git").mkdir()
+        r = client.get("/repos/browse", params={"root": str(tmp_path), "depth": 2})
+        assert r.status_code == 200
+        assert not any(i["name"] == "pkg" for i in r.json()["items"])
+
+    def test_refuses_system_root(self, client):
+        import sys
+        root = r"C:\Windows" if sys.platform == "win32" else "/proc"
+        r = client.get("/repos/browse", params={"root": root, "depth": 1})
+        assert r.status_code == 400

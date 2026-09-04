@@ -1,0 +1,2 @@
+# Dev/test-only dependencies (kept out of the production install).
+pytest==9.1.1

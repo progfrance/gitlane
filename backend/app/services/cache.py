@@ -6,6 +6,7 @@ git data for branches already visited.
 """
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -14,8 +15,10 @@ from dataclasses import dataclass, field
 
 from .git_reader import CommitData, RefsData
 
-MAX_CACHED_REPOS = 4
-MAX_VIEWS_PER_REPO = 8
+log = logging.getLogger("gitlane.cache")
+
+MAX_CACHED_REPOS = 2
+MAX_VIEWS_PER_REPO = 3
 
 
 @dataclass
@@ -29,7 +32,10 @@ class RefView:
     # Lazily-filled diff stats (sha -> (additions, deletions)) shared by the
     # history pages and the timeline of this view — no second full `git log`.
     stats: dict[str, tuple[int, int]] = field(default_factory=dict)
-    stats_full: bool = False
+    # Per-view search cache: list of (commit, badges, haystacks, badge_names).
+    # Rebuilt only when the view instance is replaced (reload), so repeated
+    # pages and keystrokes scan without reallocating N tuples.
+    _search_cache: list | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -39,16 +45,31 @@ class RepoState:
     head: str
     head_sha: str | None = None
     refs: RefsData = field(default_factory=RefsData)
-    commits: list[CommitData] = field(default_factory=list)
     loaded_at: float = 0.0
-    # Populated by the lane engine for the HEAD view:
-    layout_rows: list[dict] = field(default_factory=list)
-    max_lane: int = 0
     # Ref currently served by /history + its tip sha:
     active_ref: str = "HEAD"
     active_sha: str | None = None
     # Per-branch views (LRU) — the HEAD view is seeded on open:
     views: dict[str, RefView] = field(default_factory=dict)
+    # Cached sha -> badges index, rebuilt only when refs change.
+    _badge_index: dict | None = field(default=None, repr=False)
+    _badge_index_key: tuple | None = field(default=None, repr=False)
+
+    @property
+    def commits(self) -> list[CommitData]:
+        """Commits of the active view (single source of truth)."""
+        view = self.views.get(self.active_ref)
+        return view.commits if view is not None else []
+
+    @property
+    def layout_rows(self) -> list[dict]:
+        view = self.views.get(self.active_ref)
+        return view.layout_rows if view is not None else []
+
+    @property
+    def max_lane(self) -> int:
+        view = self.views.get(self.active_ref)
+        return view.max_lane if view is not None else 0
 
 
 class RepoCache:
@@ -64,7 +85,11 @@ class RepoCache:
 
     def get(self, path: str) -> RepoState | None:
         with self._lock:
-            return self._states.get(self._key(path))
+            state = self._states.get(self._key(path))
+            if state is not None:
+                # True LRU: a read counts as use, not just a put.
+                self._states.move_to_end(self._key(path))
+            return state
 
     def require(self, path: str) -> RepoState:
         state = self.get(path)
@@ -78,7 +103,8 @@ class RepoCache:
             self._states[self._key(state.path)] = state
             self._states.move_to_end(self._key(state.path))
             while len(self._states) > MAX_CACHED_REPOS:
-                self._states.popitem(last=False)
+                evicted, _ = self._states.popitem(last=False)
+                log.info("cache: evicted repo %s", evicted)
         return state
 
     def invalidate(self, path: str) -> None:

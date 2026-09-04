@@ -1,5 +1,6 @@
-fastapi>=0.115
-uvicorn[standard]>=0.30
-pydantic>=2.7
-pytest>=8.0
-httpx>=0.27
+# Pinned production dependencies (lot 10): exact versions tested in CI/dev.
+# Regenerate with `pip freeze` after upgrading, then re-run pytest + smoke.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+httpx==0.28.1

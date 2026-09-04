@@ -3,24 +3,29 @@ branch switching via the `ref` query parameter."""
 from __future__ import annotations
 
 import base64
-import hashlib
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..models.commit import CommitItem, HistoryEnvelope, RefBadge
-from ..services import git_reader, view_builder
+from ..models.commit import CommitItem, HistoryEnvelope, RefBadge, TimelineResponse
+from ..services import view_builder
 from ..services.timeline_builder import build_timeline
-from ..services.cache import cache
+from ..services.cache import RefView
+from .errors import require_state, resolve_view
 
 router = APIRouter(tags=["history"])
 
 DEFAULT_LIMIT = 300
 MAX_LIMIT = 1000
+MAX_QUERY_LEN = 200
+MAX_REF_LEN = 250
+MAX_CURSOR_LEN = 64
 
 
 def _decode_cursor(cursor: str | None) -> int:
     if not cursor:
         return 0
+    if len(cursor) > MAX_CURSOR_LEN:
+        raise HTTPException(status_code=400, detail="invalid cursor")
     try:
         return max(0, int(base64.b64decode(cursor.encode()).decode()))
     except Exception as exc:
@@ -32,11 +37,18 @@ def _encode_cursor(offset: int) -> str:
 
 
 def _build_badge_index(state) -> dict[str, list[RefBadge]]:
-    """Map sha -> ref badges from for-each-ref data, built ONCE per request.
+    """Map sha -> ref badges from for-each-ref data.
 
-    Previously `_badges_for` looped over every branch/tag for every commit
-    (O(commits x refs)); the inverted index makes per-commit lookup O(1).
+    Result is cached on the RepoState and rebuilt only when refs change
+    (tracked via head_sha), so repeated pages/searches skip the O(refs)
+    rebuild. Per-commit lookup stays O(1).
     """
+    cached = getattr(state, "_badge_index", None)
+    cached_key = getattr(state, "_badge_index_key", None)
+    key = (state.head_sha, len(state.refs.local_branches),
+           len(state.refs.remote_branches), len(state.refs.tags))
+    if cached is not None and cached_key == key:
+        return cached
     index: dict[str, list[RefBadge]] = {}
     for name, rsha in state.refs.local_branches.items():
         index.setdefault(rsha, []).append(RefBadge(type="local_branch", name=name))
@@ -44,6 +56,8 @@ def _build_badge_index(state) -> dict[str, list[RefBadge]]:
         index.setdefault(rsha, []).append(RefBadge(type="remote_branch", name=name))
     for name, rsha in state.refs.tags.items():
         index.setdefault(rsha, []).append(RefBadge(type="tag", name=name))
+    state._badge_index = index
+    state._badge_index_key = key
     return index
 
 
@@ -54,7 +68,7 @@ def _badges_for(index: dict[str, list[RefBadge]], sha: str, decorations: list[st
             badges.append(RefBadge(type="local_branch", name=deco[len("HEAD -> "):]))
         elif deco.startswith("tag: "):
             badges.append(RefBadge(type="tag", name=deco[len("tag: "):]))
-        elif "/" in deco and deco.split("/", 1)[0] in ("origin",) or deco.startswith("origin/"):
+        elif deco.startswith("origin/"):
             badges.append(RefBadge(type="remote_branch", name=deco))
         else:
             badges.append(RefBadge(type="local_branch", name=deco))
@@ -65,14 +79,6 @@ def _badges_for(index: dict[str, list[RefBadge]], sha: str, decorations: list[st
             badges.append(b)
             known.add(b.name)
     return badges
-
-
-def _status_checks(sha: str) -> list[str]:
-    """Deterministic placeholder status dots (v1 demo — no CI integration)."""
-    digest = hashlib.md5(sha.encode()).digest()
-    palette = ("success", "success", "failed", "pending", "success", "failed", "success")
-    count = 3 + digest[0] % 3
-    return [palette[(digest[i + 1] + i) % len(palette)] for i in range(count)]
 
 
 def _matches(pre: tuple[str, str, str], q_lower: str, badge_names: set[str]) -> bool:
@@ -87,13 +93,30 @@ def _matches(pre: tuple[str, str, str], q_lower: str, badge_names: set[str]) -> 
 
 
 def _resolve_view(state, path: str, ref: str):
-    """Resolve the requested ref to its cached view (400 on invalid ref)."""
-    try:
-        return view_builder.get_view(state, path, ref)
-    except git_reader.InvalidRefError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except git_reader.GitError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    """Resolve the requested ref to its cached view (mapping via api/errors)."""
+    return resolve_view(state, path, ref)
+
+
+def _search_index(view: RefView, badge_index: dict[str, list[RefBadge]]):
+    """Per-view search cache: badges + lowercase haystacks, built once.
+
+    Rebuilt only when the view object changes (new instance after reload),
+    so repeated pages and keystrokes scan without reallocating N tuples.
+    """
+    cached = getattr(view, "_search_cache", None)
+    if cached is not None:
+        return cached
+    rows = []
+    for c in view.commits:
+        badges = _badges_for(badge_index, c.sha, c.decorations)
+        rows.append((
+            c,
+            badges,
+            (c.subject.lower(), c.sha.lower(), c.author_name.lower()),
+            {b.name.lower() for b in badges},
+        ))
+    view._search_cache = rows
+    return rows
 
 
 @router.get("/history", response_model=HistoryEnvelope)
@@ -101,32 +124,21 @@ def history(
     path: str = Query(..., description="repo path previously opened"),
     cursor: str | None = None,
     limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
-    q: str = "",
-    ref: str = "HEAD",
+    q: str = Query("", max_length=MAX_QUERY_LEN),
+    ref: str = Query("HEAD", max_length=MAX_REF_LEN),
 ) -> HistoryEnvelope:
-    try:
-        state = cache.require(path)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
+    state = require_state(path)
 
     view = _resolve_view(state, path, ref)
 
-    commits = view.commits
     q = q.strip()
     offset = _decode_cursor(cursor)
 
-    # Per-request badge index (O(refs)) + precomputed lowercase haystacks
-    # so the search scan stays O(commits) with cheap substring checks.
+    # Cached badge index + cached search rows: a page costs O(page), and a
+    # search keystroke costs one O(commits) substring scan with no per-commit
+    # branch/tag loops and no per-request N-tuple rebuild.
     badge_index = _build_badge_index(state)
-    precomputed: list[tuple] = []
-    for c in commits:
-        badges = _badges_for(badge_index, c.sha, c.decorations)
-        precomputed.append((
-            c,
-            badges,
-            (c.subject.lower(), c.sha.lower(), c.author_name.lower()),
-            {b.name.lower() for b in badges},
-        ))
+    precomputed = _search_index(view, badge_index)
 
     if q:
         q_lower = q.lower()
@@ -140,7 +152,7 @@ def history(
     # Lazy diff stats: one git call for the served page only, cached on the view.
     stats = view_builder.ensure_stats(path, view, [c.sha for c, _ in page])
 
-    layout_by_sha = {r["sha"]: r for r in view.layout_rows}
+    layout_by_sha = {r["sha"]: r for r in view.layout_rows if r["sha"] in {c.sha for c, _ in page}}
     items = []
     for c, badges in page:
         lr = layout_by_sha.get(c.sha, {})
@@ -154,15 +166,12 @@ def history(
                 message_subject=c.subject,
                 author_name=c.author_name,
                 author_email=c.author_email,
-                author_avatar_url=None,
                 timestamp=c.timestamp,
-                relative_time=git_reader.relative_time(c.timestamp),
                 parents=c.parents,
                 refs=badges,
                 lane_index=lr.get("lane_index", 0),
                 node=node,
                 segments=segs,
-                status_checks=_status_checks(c.sha),
                 additions=adds,
                 deletions=dels,
                 is_head=c.sha == view.head_sha,
@@ -178,24 +187,32 @@ def history(
     )
 
 
-@router.get("/timeline")
+@router.get("/timeline", response_model=TimelineResponse)
 def timeline(
     path: str = Query(..., description="repo path previously opened"),
-    ref: str = "HEAD",
+    ref: str = Query("HEAD", max_length=MAX_REF_LEN),
     buckets: int = Query(90, ge=10, le=300),
-) -> dict:
-    try:
-        state = cache.require(path)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
+) -> TimelineResponse:
+    state = require_state(path)
 
     view = _resolve_view(state, path, ref)
 
-    # Stats converge lazily: pages already served are cached, the remainder
-    # is fetched once here so the sparkline always shows real adds/dels.
-    view_builder.ensure_all_stats(path, view)
-    return build_timeline(
-        [c.timestamp for c in view.commits], buckets,
-        additions=[view.stats.get(c.sha, (0, 0))[0] for c in view.commits],
-        deletions=[view.stats.get(c.sha, (0, 0))[1] for c in view.commits],
+    # Sample commits per bucket BEFORE fetching stats: one bounded
+    # `diff-tree` over ~buckets SHAs instead of all N commits, then aggregate
+    # the sampled adds/dels. Cost is O(buckets), not O(history).
+    n = len(view.commits)
+    if n == 0:
+        return TimelineResponse(t_min=None, t_max=None, points=[])
+    step = max(1, n // (buckets * 4))
+    sampled_shas = [view.commits[i].sha for i in range(0, n, step)]
+    stats = view_builder.ensure_stats(path, view, sampled_shas)
+    sampled = [
+        (view.commits[i].timestamp, *stats.get(view.commits[i].sha, (0, 0)))
+        for i in range(0, n, step)
+    ]
+    data = build_timeline(
+        [t for t, _a, _d in sampled], buckets,
+        additions=[a for _t, a, _d in sampled],
+        deletions=[d for _t, _a, d in sampled],
     )
+    return TimelineResponse(**data)

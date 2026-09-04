@@ -1,11 +1,15 @@
 """Build per-branch views: commits + lane layout for a given ref."""
 from __future__ import annotations
 
+import logging
+import os
 import time
 
 from . import git_reader
 from .cache import MAX_VIEWS_PER_REPO, RefView, RepoState
 from .lane_layout import compute_layout
+
+log = logging.getLogger("gitlane.views")
 
 
 def resolve_ref(state: RepoState, ref: str) -> str:
@@ -46,24 +50,33 @@ def build_view(path: str, ref: str) -> RefView:
 def get_view(state: RepoState, path: str, ref: str) -> RefView:
     """Return the (cached) view for `ref`, refreshing it on demand.
 
-    Keeps a small LRU per repo so revisiting a branch is instant while
-    memory stays bounded.
+    LRU eviction: `loaded_at` is refreshed on every hit so a frequently
+    visited branch is not evicted as "oldest".
     """
     ref = resolve_ref(state, ref)
     view = state.views.get(ref)
     if view is not None:
+        view.loaded_at = time.time()
         state.active_ref = ref
         state.active_sha = view.head_sha
         return view
+    if not os.path.isdir(path):
+        raise git_reader.RepoNotFoundError(f"repo directory gone: {path}")
     try:
         view = build_view(path, ref)
     except git_reader.InvalidRefError:
         raise
+    except git_reader.RepoNotFoundError:
+        raise
     except git_reader.GitError as exc:
-        raise git_reader.InvalidRefError(str(exc)) from exc
+        # Genuine git failure (timeout, binary, I/O) — NOT a 400: let the
+        # route map it to a 500 instead of blaming the caller's ref.
+        log.warning("get_view(%s, %s) git failure: %s", path, ref, exc)
+        raise
     if len(state.views) >= MAX_VIEWS_PER_REPO:
         oldest = min(state.views, key=lambda k: state.views[k].loaded_at)
         del state.views[oldest]
+        log.info("cache: evicted view %s for %s", oldest, path)
     state.views[ref] = view
     state.active_ref = ref
     state.active_sha = view.head_sha
@@ -81,14 +94,9 @@ def ensure_stats(path: str, view: RefView, shas: list[str]) -> dict[str, tuple[i
     if missing:
         try:
             fetched = git_reader.read_diff_stats_for_shas(path, missing)
-        except git_reader.GitError:
+        except git_reader.GitError as exc:
+            log.warning("ensure_stats(%s) failed: %s", path, exc)
             fetched = {}
         for s in missing:
             view.stats[s] = fetched.get(s, (0, 0))
     return {s: view.stats.get(s, (0, 0)) for s in shas}
-
-
-def ensure_all_stats(path: str, view: RefView) -> None:
-    """Populate stats for every commit of the view (timeline use)."""
-    ensure_stats(path, view, [c.sha for c in view.commits])
-    view.stats_full = True

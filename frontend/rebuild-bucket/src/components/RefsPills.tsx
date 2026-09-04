@@ -31,7 +31,6 @@ export default function RefsPills({ refs }: { refs: RefBadge[] }) {
     <span className="refs-wrap">
       {refs.slice(0, 4).map((r, i) => (
         <span key={`${r.type}-${r.name}-${i}`} className={`ref-pill ${pillClass(r)}`}>
-          {r.type === "head" && <span className="head-dot" />}
           {r.type === "local_branch" && <BranchIcon />}
           {r.type === "remote_branch" && <RemoteIcon />}
           {r.type === "tag" && <TagIcon />}
@@ -47,7 +46,6 @@ function pillClass(r: RefBadge): string {
   switch (r.type) {
     case "local_branch": return "local";
     case "remote_branch": return "remote";
-    case "tag": return "tag";
-    default: return "head";
+    default: return "tag";
   }
 }

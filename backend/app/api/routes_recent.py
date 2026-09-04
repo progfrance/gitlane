@@ -1,9 +1,12 @@
 """Endpoints for recently-opened repos (PLAN2 §3.2)."""
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException
 
-from ..services import recent, git_reader
+from ..models.repo import RecentRepoRequest
+from ..services import git_reader, recent
 
 router = APIRouter(tags=["repos"])
 
@@ -15,9 +18,15 @@ def get_recent() -> list[dict]:
 
 
 @router.post("/repos/recent")
-def post_recent(body: dict) -> list[dict]:
-    """Push a repo path to the recent list (deduplicates, caps at 10)."""
-    path = body.get("path")
-    if not path:
-        raise HTTPException(status_code=400, detail="path is required")
+def post_recent(body: RecentRepoRequest) -> list[dict]:
+    """Push a repo path to the recent list (deduplicates, caps at 10).
+
+    Only real git repositories are recorded — unlike an open `dict` body,
+    a stray path can no longer pollute the recents.
+    """
+    path = os.path.normpath(os.path.abspath(body.path))
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=400, detail=f"directory not found: {path}")
+    if not git_reader.is_git_repo(path):
+        raise HTTPException(status_code=400, detail=f"not a git repository: {path}")
     return recent.add_recent(path)

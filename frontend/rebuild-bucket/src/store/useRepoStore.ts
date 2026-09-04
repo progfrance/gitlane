@@ -1,4 +1,11 @@
-/** Tiny observable store (React-friendly via useSyncExternalStore). */
+/** Tiny observable store (React-friendly via useSyncExternalStore).
+ *
+ * `useStore(selector)` subscribes to a slice only: a hover change
+ * re-renders the two rows involved, not the whole app. Selectors must
+ * return stable references for unchanged slices (primitives or the same
+ * object identity) to avoid extra renders.
+ */
+import { useSyncExternalStore } from "react";
 
 export interface RepoState {
   repoPath: string | null;
@@ -59,3 +66,12 @@ export const repoStore = {
     return () => listeners.delete(l);
   },
 };
+
+/** Subscribe to a slice of the store — re-renders only when it changes. */
+export function useStore<T>(selector: (s: RepoState) => T): T {
+  return useSyncExternalStore(
+    repoStore.subscribe,
+    () => selector(repoStore.get()),
+    () => selector(repoStore.get()),
+  );
+}

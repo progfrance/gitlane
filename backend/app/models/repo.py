@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class OpenRepoRequest(BaseModel):
-    path: str = Field(..., description="Absolute path to a local git repository")
+    path: str = Field(..., min_length=1, max_length=1024, description="Absolute path to a local git repository")
 
 
 class RepoInfo(BaseModel):
@@ -18,8 +18,7 @@ class RepoInfo(BaseModel):
 
 class OpenRepoResponse(BaseModel):
     ok: bool
-    repo: RepoInfo | None = None
-    error: str | None = None
+    repo: RepoInfo
 
 
 class RepoRef(BaseModel):
@@ -34,3 +33,7 @@ class RefsResponse(BaseModel):
     local_branches: list[RepoRef] = []
     remote_branches: list[RepoRef] = []
     tags: list[RepoRef] = []
+
+
+class RecentRepoRequest(BaseModel):
+    path: str = Field(..., min_length=1, max_length=1024)

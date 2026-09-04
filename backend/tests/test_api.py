@@ -66,9 +66,13 @@ class TestHistory:
         for item in body["items"]:
             assert set(item) >= {
                 "sha", "short_sha", "message_subject", "author_name",
-                "author_email", "timestamp", "relative_time", "parents",
-                "refs", "lane_index", "node", "segments", "status_checks",
+                "author_email", "timestamp", "parents",
+                "refs", "lane_index", "node", "segments",
+                "additions", "deletions", "is_head",
             }
+            assert "relative_time" not in item
+            assert "status_checks" not in item
+            assert "author_avatar_url" not in item
             node = item["node"]
             assert {"x", "y", "r", "color"} <= set(node)
             for seg in item["segments"]:
@@ -323,3 +327,59 @@ class TestEmptyRepo:
         assert r.status_code == 200
         assert r.json()["total"] == 0
         assert r.json()["items"] == []
+
+
+class TestCommitDetail:
+    """GET /commit/detail returns message body, parents, files and stats."""
+
+    def test_detail_contract(self, opened, client):
+        sha = client.get("/history", params={"path": opened, "limit": 1}).json()["items"][0]["sha"]
+        r = client.get("/commit/detail", params={"path": opened, "sha": sha})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["sha"] == sha
+        assert body["short_sha"] == sha[:7]
+        assert set(body) >= {
+            "message_subject", "message_body", "author_name", "author_email",
+            "timestamp", "parents", "refs", "additions", "deletions",
+            "files", "is_head",
+        }
+        assert isinstance(body["files"], list)
+        assert body["additions"] + body["deletions"] >= 0
+
+    def test_detail_bad_sha_returns_400(self, opened, client):
+        r = client.get("/commit/detail", params={"path": opened, "sha": "not-a-sha!!"})
+        assert r.status_code == 400
+
+    def test_detail_unknown_sha_returns_400(self, opened, client):
+        r = client.get("/commit/detail", params={"path": opened, "sha": "deadbeef"})
+        assert r.status_code == 400
+
+    def test_detail_requires_open(self, client, tmp_path):
+        r = client.get("/commit/detail", params={"path": str(tmp_path), "sha": "deadbeef"})
+        assert r.status_code == 404
+
+
+class TestRefsPagination:
+    def test_refs_pagination(self, opened, client):
+        r = client.get("/refs", params={"path": opened, "limit": 1, "offset": 0})
+        assert r.status_code == 200
+        assert len(r.json()["local_branches"]) == 1
+
+    def test_refs_search(self, opened, client):
+        r = client.get("/refs", params={"path": opened, "q": "main"})
+        assert r.status_code == 200
+        names = [b["name"] for b in r.json()["local_branches"]]
+        assert names == ["main"]
+
+
+class TestRecentValidation:
+    def test_recent_rejects_non_repo(self, client, tmp_path):
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        r = client.post("/repos/recent", json={"path": str(plain)})
+        assert r.status_code == 400
+
+    def test_recent_rejects_missing_dir(self, client, tmp_path):
+        r = client.post("/repos/recent", json={"path": str(tmp_path / "nope")})
+        assert r.status_code == 400

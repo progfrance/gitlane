@@ -6,12 +6,15 @@ shell strings are ever composed (see PLAN.md section 16).
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 
 GIT_TIMEOUT = 15  # seconds
 
 _LOG_FORMAT = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%D%x1e"
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_SHA_ARG_RE = re.compile(r"^[0-9a-f]{4,40}$")
 
 
 class GitError(Exception):
@@ -24,6 +27,10 @@ class InvalidRefError(GitError):
     Unlike other git failures this is a 400-class client error: callers must
     surface it instead of silently falling back to HEAD.
     """
+
+
+class RepoNotFoundError(GitError):
+    """Raised when the repository path vanished (404-class, not a 500)."""
 
 
 @dataclass
@@ -86,13 +93,15 @@ def repo_name(path: str) -> str:
 def read_refs(repo_path: str) -> RefsData:
     data = RefsData()
     try:
-        data.head_sha = _run(repo_path, ["rev-parse", "HEAD"]).strip() or None
+        # One call for both: `rev-parse` accepts several expressions and
+        # prints one result per line (sha, then branch or "HEAD" if detached).
+        out = _run(repo_path, ["rev-parse", "HEAD", "--abbrev-ref", "HEAD"], timeout=5)
+        lines = out.splitlines()
+        data.head_sha = lines[0].strip() or None if lines else None
+        data.head = lines[1].strip() if len(lines) > 1 and lines[1].strip() else "HEAD"
     except GitError:
         # Empty repo (no commits yet): no HEAD sha, keep a sensible branch name.
         data.head_sha = None
-    try:
-        data.head = _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "HEAD"
-    except GitError:
         data.head = "HEAD"
 
     for_each = _run(
@@ -114,9 +123,13 @@ def read_refs(repo_path: str) -> RefsData:
 
 def read_commits(
     repo_path: str, ref: str = "HEAD", max_count: int | None = None,
-    with_stats: bool = False,
 ) -> list[CommitData]:
-    """Read the full history of `ref` in topological order (children first)."""
+    """Read the full history of `ref` in topological order (children first).
+
+    Diff stats are intentionally NOT loaded here — callers fetch them lazily
+    per served page via read_diff_stats_for_shas (one `git log --numstat`
+    over the whole history per open would double the git cost upfront).
+    """
     args = ["log", "--topo-order", f"--format={_LOG_FORMAT}"]
     if max_count:
         args.append(f"--max-count={max_count}")
@@ -165,26 +178,7 @@ def read_commits(
             )
         )
 
-    if with_stats and commits:
-        stats = _read_diff_stats(repo_path, ref, max_count)
-        for c in commits:
-            a, d = stats.get(c.sha, (0, 0))
-            c.additions, c.deletions = a, d
-
     return commits
-
-
-def _read_diff_stats(
-    repo_path: str, ref: str, max_count: int | None,
-) -> dict[str, tuple[int, int]]:
-    """Fetch per-commit line additions/deletions via --numstat."""
-    args = ["log", "--numstat", "--format=%H"]
-    if max_count:
-        args.append(f"--max-count={max_count}")
-    args.append(resolve_rev(ref))
-    args.append("--")
-    out = _run(repo_path, args)
-    return _parse_numstat(out)
 
 
 def read_diff_stats_for_shas(
@@ -196,13 +190,14 @@ def read_diff_stats_for_shas(
     only pay for the rows actually served — no second full `git log` walk.
     Unknown SHAs are reported as (0, 0); callers fall back gracefully.
     """
-    if not shas:
+    valid = [s for s in dict.fromkeys(shas) if _SHA_ARG_RE.match(s)]
+    if not valid:
         return {}
     try:
         proc = subprocess.run(
             ["git", "-C", repo_path, "diff-tree", "--numstat", "--no-renames",
              "--format=%H", "--stdin"],
-            input=("\n".join(shas) + "\n").encode(),
+            input=("\n".join(valid) + "\n").encode(),
             capture_output=True,
             timeout=GIT_TIMEOUT,
             check=True,
@@ -219,16 +214,13 @@ def read_diff_stats_for_shas(
 
 def _parse_numstat(out: str) -> dict[str, tuple[int, int]]:
     """Parse `--numstat` output (SHA lines + add/del/file triples)."""
-    import re
-
-    SHA_RE = re.compile(r"^[0-9a-f]{40}$")
     cur: str | None = None
     acc: dict[str, list[int]] = {}
     for line in out.splitlines():
         line = line.strip()
         if not line:
             continue
-        if SHA_RE.match(line):
+        if _SHA_RE.match(line):
             cur = line
             if cur not in acc:
                 acc[cur] = [0, 0]
@@ -254,8 +246,19 @@ def has_commits(repo_path: str) -> bool:
 
 
 def _is_valid_ref(ref: str) -> bool:
-    # Defensive: only allow ref-looking tokens, never options.
-    return bool(ref) and not ref.startswith("-") and " " not in ref and "\x00" not in ref
+    # Defensive: only allow ref-looking tokens — never options, whitespace,
+    # control chars, or git revision operators that could escape the intent.
+    if not ref or ref.startswith("-"):
+        return False
+    if any(c.isspace() or ord(c) < 32 for c in ref):
+        return False
+    if "\x00" in ref:
+        return False
+    if ref.startswith("+"):
+        return False
+    if any(op in ref for op in ("..", "@{", ":", "?", "*", "[", "\\", "^", "~")):
+        return False
+    return True
 
 
 def resolve_rev(ref: str) -> str:
@@ -275,36 +278,10 @@ def count_commits(repo_path: str, ref: str = "HEAD") -> int:
     except GitError:
         # Empty repo (no HEAD yet) reports 0 instead of erroring.
         return 0
-    return int(out.strip() or 0)
-
-
-def _sanitize_rev(ref: str) -> str:
-    # Kept for backward compatibility; prefer resolve_rev for request paths.
-    return ref if _is_valid_ref(ref) else "HEAD"
-
-
-def relative_time(timestamp: int, now: int | None = None) -> str:
-    """Human readable relative time (English, as per the visual spec)."""
-    import time
-
-    now = now if now is not None else int(time.time())
-    delta = max(0, now - timestamp)
-    if delta < 60:
-        return "just now"
-    minutes = delta // 60
-    if minutes < 60:
-        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-    hours = minutes // 60
-    if hours < 24:
-        return f"{hours} hour{'s' if hours != 1 else ''} ago"
-    days = hours // 24
-    if days < 31:
-        return f"{days} day{'s' if days != 1 else ''} ago"
-    months = days // 31
-    if months < 12:
-        return f"{months} month{'s' if months != 1 else ''} ago"
-    years = days // 365
-    return f"{years} year{'s' if years != 1 else ''} ago"
+    try:
+        return int(out.strip() or 0)
+    except ValueError as exc:
+        raise GitError(f"unexpected rev-list output: {out.strip()!r}") from exc
 
 
 def read_remote(repo_path: str) -> str | None:
@@ -354,3 +331,102 @@ def read_remote(repo_path: str) -> str | None:
             return f"https://{host}/{repo_path}"
 
     return None
+
+
+@dataclass
+class CommitDetailData:
+    sha: str
+    subject: str = ""
+    body: str = ""
+    author_name: str = ""
+    author_email: str = ""
+    timestamp: int = 0
+    parents: list[str] = field(default_factory=list)
+    additions: int = 0
+    deletions: int = 0
+    files: list[dict] = field(default_factory=list)
+
+
+def _parse_name_status(out: str) -> list[dict]:
+    """Parse `git show --name-status --format=` output into file entries."""
+    files: list[dict] = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        code, rest = parts[0], parts[1:]
+        letter = code[:1].upper()
+        if letter == "A":
+            status = "added"
+        elif letter == "D":
+            status = "deleted"
+        elif letter == "R":
+            status = "renamed"
+        elif letter == "M":
+            status = "modified"
+        else:
+            status = "other"
+        # Rename format: R100\told\tnew — display the new path.
+        path = rest[-1] if rest else ""
+        if path:
+            files.append({"path": path, "status": status})
+    return files
+
+
+def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
+    """Read full detail for one commit: message, parents, files, stats.
+
+    `sha` must be a hex prefix (4-40 chars); anything else is rejected as
+    InvalidRefError (400-class) before touching git.
+    """
+    if not _SHA_ARG_RE.match(sha or ""):
+        raise InvalidRefError(f"invalid sha: {sha!r}")
+    try:
+        header = _run(
+            repo_path,
+            ["show", "--no-patch", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e", sha],
+            timeout=10,
+        )
+    except GitError as exc:
+        msg = str(exc).lower()
+        if "unknown revision" in msg or "bad revision" in msg or "ambiguous argument" in msg:
+            raise InvalidRefError(f"unknown commit: {sha!r}") from exc
+        raise
+    parts = header.split("\x1e")[0].split("\x1f")
+    if len(parts) < 7 or not parts[0].strip():
+        raise InvalidRefError(f"unknown commit: {sha!r}")
+    full_sha, parents, an, ae, at, subject, body = (parts + [""] * 7)[:7]
+    try:
+        files_out = _run(repo_path, ["show", "--name-status", "--format=", sha], timeout=10)
+    except GitError:
+        files_out = ""
+    stats = read_diff_stats_for_shas(repo_path, [full_sha.strip()])
+    adds, dels = stats.get(full_sha.strip(), (0, 0))
+    files = _parse_name_status(files_out)
+    # Attach per-file stats for the common case (single numstat line per path).
+    try:
+        numstat = _run(repo_path, ["show", "--numstat", "--format=", sha], timeout=10)
+        per_file: dict[str, list[int]] = {}
+        for line in numstat.splitlines():
+            bits = line.split("\t")
+            if len(bits) >= 3 and bits[0].isdigit() and bits[1].isdigit():
+                per_file[bits[2]] = [int(bits[0]), int(bits[1])]
+        for f in files:
+            if f["path"] in per_file:
+                f["additions"], f["deletions"] = per_file[f["path"]]
+    except GitError:
+        pass
+    return CommitDetailData(
+        sha=full_sha.strip(),
+        subject=subject,
+        body=body.strip(),
+        author_name=an,
+        author_email=ae,
+        timestamp=int(at) if at.isdigit() else 0,
+        parents=parents.split() if parents else [],
+        additions=adds,
+        deletions=dels,
+        files=files,
+    )

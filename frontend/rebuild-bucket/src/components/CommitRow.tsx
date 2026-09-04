@@ -1,5 +1,7 @@
 /** One dense commit row: graph lane | content (pills + message) | right meta.
- *  Pills are inline-flex BEFORE the message — single line, no overlap (PLAN2 fix). */
+ *  Pills are inline-flex BEFORE the message — single line, no overlap (PLAN2 fix).
+ *  Memoized: a hover change elsewhere re-renders only the two rows involved. */
+import { memo } from "react";
 import type { CommitItem } from "../api/client";
 import GraphCanvas from "../graph/GraphCanvas";
 import RefsPills from "./RefsPills";
@@ -9,7 +11,6 @@ import { hexToRgba } from "../graph/coords";
 interface Props {
   commit: CommitItem;
   index: number;
-  graphWidth: number;
   remote: string | null;
   hovered: boolean;
   selected: boolean;
@@ -31,13 +32,17 @@ function highlight(text: string, q: string) {
   );
 }
 
-export default function CommitRow({
-  commit, index, graphWidth, remote, hovered, selected, query, onHover, onSelect,
+function CommitRowInner({
+  commit, index, remote, hovered, selected, query, onHover, onSelect,
 }: Props) {
   const hit = query.length > 0 && commit.message_subject.toLowerCase().includes(query.toLowerCase());
   const laneTint = commit.node ? hexToRgba(commit.node.color, 0.12) : undefined;
   return (
     <div
+      role="row"
+      tabIndex={0}
+      aria-selected={selected}
+      aria-label={`${commit.short_sha} ${commit.message_subject} ${commit.author_name}`}
       className={[
         "commit-row",
         index % 2 === 0 ? "even" : "",
@@ -49,8 +54,14 @@ export default function CommitRow({
       onMouseEnter={() => onHover(commit.sha)}
       onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(commit.sha)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(commit.sha);
+        }
+      }}
     >
-      <GraphCanvas commit={commit} width={graphWidth} hovered={hovered} selected={selected} />
+      <GraphCanvas commit={commit} hovered={hovered} selected={selected} />
       <div className="commit-content">
         <RefsPills refs={commit.refs} />
         <span className="commit-message">
@@ -61,3 +72,8 @@ export default function CommitRow({
     </div>
   );
 }
+
+// Props are stable by construction (row object identity, primitive flags,
+// stable callbacks) so the default shallow compare is enough.
+const CommitRow = memo(CommitRowInner);
+export default CommitRow;

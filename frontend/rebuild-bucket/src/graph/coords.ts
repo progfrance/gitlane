@@ -1,5 +1,11 @@
 /** Shared geometry constants — must mirror backend lane_layout.py. */
 
+/** Lane palette — same 12 colors as backend `lane_layout.LANE_COLORS`. */
+export const LANE_COLORS = [
+  "#d6409f", "#8e4ec6", "#0091ff", "#00a2c7", "#f5a623", "#30a46c",
+  "#e5484d", "#6e56cf", "#12b5cb", "#e2b714", "#3eb8b3", "#7ee787",
+];
+
 export const ROW_HEIGHT = 32;
 export const NODE_Y = 16;
 export const LANE_GAP = 20;

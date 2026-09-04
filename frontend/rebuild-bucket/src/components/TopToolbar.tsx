@@ -116,6 +116,14 @@ export default function TopToolbar({
           onSelect={onBranch}
         />
       </div>
+      <button
+        type="button"
+        className="toolbar-btn"
+        title={t("change_repo")}
+        onClick={() => { window.location.href = "/picker"; }}
+      >
+        {t("repo_btn")}
+      </button>
       <span className="toolbar-sep" />
       <span className="toolbar-count">
         {repo ? t("commits_count", { total }) : t("no_repo")}
@@ -125,6 +133,7 @@ export default function TopToolbar({
         ref={searchRef as React.RefObject<HTMLInputElement>}
         className="toolbar-search"
         type="search"
+        aria-label={t("search_placeholder")}
         placeholder={t("search_placeholder")}
         value={query}
         onChange={handleSearch}
@@ -148,8 +157,8 @@ export default function TopToolbar({
           EN
         </button>
       </div>
-      <button className="toolbar-btn" title={t("refresh")} onClick={onRefresh}>
-        ⟳
+      <button className="toolbar-btn" title={t("refresh")} aria-label={t("refresh")} onClick={onRefresh}>
+        <span aria-hidden="true">⟳</span>
       </button>
     </div>
   );

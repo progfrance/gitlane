@@ -3,6 +3,7 @@
  *  reference look: photo/initials inside a colored ring. */
 
 import type { CommitItem } from "../api/client";
+import { initials } from "../components/Avatar";
 import { darken, hexToRgba } from "./coords";
 
 export function setupCanvas(
@@ -61,16 +62,6 @@ function drawSegment(ctx: CanvasRenderingContext2D, seg: CommitItem["segments"][
     ctx.stroke();
   }
   ctx.restore();
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 /** Draw one row's lane segments + author-avatar node. */
