@@ -6,6 +6,22 @@
 (function () {
   "use strict";
 
+  function injectToolbarSafetyCss() {
+    if (document.getElementById("gitlane-toolbar-safety")) return;
+    var style = document.createElement("style");
+    style.id = "gitlane-toolbar-safety";
+    style.textContent = [
+      ".top-toolbar{display:flex;align-items:center;gap:8px;}",
+      ".header-selectors{flex:1 1 auto;min-width:0;}",
+      ".selector-button{max-width:min(220px,32vw)!important;}",
+      ".toolbar-search{width:clamp(110px,22vw,260px)!important;}",
+      ".lang-toggle,.toolbar-btn{flex:0 0 auto!important;}",
+      "@media (max-width:980px){.toolbar-count{display:none!important}}",
+      "@media (max-width:760px){.toolbar-sep{display:none!important}.toolbar-search{width:clamp(96px,26vw,170px)!important}}",
+    ].join("");
+    document.head.appendChild(style);
+  }
+
   function goPicker(e) {
     if (e) e.preventDefault();
     window.location.href = "/picker";
@@ -44,6 +60,7 @@
 
   var tries = 0;
   var timer = setInterval(function () {
+    injectToolbarSafetyCss();
     if (injectButton() || ++tries > 50) clearInterval(timer);
   }, 100);
 })();
