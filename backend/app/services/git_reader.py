@@ -223,15 +223,17 @@ def relative_time(timestamp: int, now: int | None = None) -> str:
 
 
 def read_remote(repo_path: str) -> str | None:
-    """Return a safe web URL base for the repo's origin remote (GitHub hosts).
+    """Return a safe web URL base for the repo's origin remote.
 
-    Supports public and enterprise hosts, and strips credentials if present:
-      https://token@github.example.com/org/repo.git -> https://github.example.com/org/repo
-      git@github.example.com:org/repo.git           -> https://github.example.com/org/repo
-      ssh://git@github.example.com/org/repo.git     -> https://github.example.com/org/repo
-    Returns None when no origin remote or when the host is not GitHub-like.
+    Supports GitHub/GitLab/Bitbucket/Azure-style remotes and strips
+    credentials if present:
+      https://token@host/org/repo.git -> https://host/org/repo
+      git@host:org/repo.git           -> https://host/org/repo
+      ssh://git@host/org/repo.git     -> https://host/org/repo
+    Returns None when no origin remote is configured or parsing fails.
     """
     import re
+    from urllib.parse import urlsplit
 
     try:
         url = _run(repo_path, ["config", "--get", "remote.origin.url"], timeout=5).strip()
@@ -240,27 +242,30 @@ def read_remote(repo_path: str) -> str | None:
     if not url:
         return None
 
-    host = owner = repo = None
+    def _strip_git_suffix(path: str) -> str:
+        p = path.strip().strip("/")
+        if p.endswith(".git"):
+            p = p[:-4]
+        return p.strip("/")
 
-    # https://[user@]host/org/repo(.git)
-    m = re.match(r"https?://(?:[^@/]+@)?([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+    # http(s)/ssh URL forms: keep full repo path (supports nested groups).
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("ssh://"):
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        if not host:
+            return None
+        host_port = f"{host}:{parsed.port}" if parsed.port else host
+        repo_path = _strip_git_suffix(parsed.path)
+        if not repo_path:
+            return None
+        return f"https://{host_port}/{repo_path}"
+
+    # SCP-like syntax: git@host:group/subgroup/repo.git
+    m = re.match(r"(?:[^@\s]+@)?([^:\s]+):(.+)$", url)
     if m:
-        host, owner, repo = m.group(1), m.group(2), m.group(3)
+        host = m.group(1)
+        repo_path = _strip_git_suffix(m.group(2))
+        if host and repo_path:
+            return f"https://{host}/{repo_path}"
 
-    # ssh://[user@]host/org/repo(.git)
-    if host is None:
-        m = re.match(r"ssh://(?:[^@/]+@)?([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$", url)
-        if m:
-            host, owner, repo = m.group(1), m.group(2), m.group(3)
-
-    # [user@]host:org/repo(.git)
-    if host is None:
-        m = re.match(r"(?:[^@\s]+@)?([^:\s]+):([^/\s]+)/([^/\s]+?)(?:\.git)?$", url)
-        if m:
-            host, owner, repo = m.group(1), m.group(2), m.group(3)
-
-    if not (host and owner and repo):
-        return None
-    if "github" not in host.lower():
-        return None
-    return f"https://{host}/{owner}/{repo}"
+    return None
