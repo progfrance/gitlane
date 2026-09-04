@@ -208,7 +208,7 @@ class TestGitReaderRemote:
         )
         assert git_reader.read_remote(str(repo)) == "https://github.com/owner/repo"
 
-    def test_read_remote_non_github_is_none(self, tmp_path, monkeypatch):
+    def test_read_remote_non_github_supported(self, tmp_path, monkeypatch):
         from app.services import git_reader
 
         repo = tmp_path / "remote-repo"
@@ -216,6 +216,28 @@ class TestGitReaderRemote:
         monkeypatch.setattr(
             git_reader, "_run",
             lambda path, args, timeout=15: "git@gitlab.com:owner/repo.git\n",
+        )
+        assert git_reader.read_remote(str(repo)) == "https://gitlab.com/owner/repo"
+
+    def test_read_remote_nested_groups(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+        monkeypatch.setattr(
+            git_reader, "_run",
+            lambda path, args, timeout=15: "git@gitlab.com:group/subgroup/repo.git\n",
+        )
+        assert git_reader.read_remote(str(repo)) == "https://gitlab.com/group/subgroup/repo"
+
+    def test_read_remote_unparsable_is_none(self, tmp_path, monkeypatch):
+        from app.services import git_reader
+
+        repo = tmp_path / "remote-repo"
+        repo.mkdir()
+        monkeypatch.setattr(
+            git_reader, "_run",
+            lambda path, args, timeout=15: "not-a-valid-remote\n",
         )
         assert git_reader.read_remote(str(repo)) is None
 
