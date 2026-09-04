@@ -18,6 +18,14 @@ class GitError(Exception):
     """Raised when a git command fails or the target is not a repository."""
 
 
+class InvalidRefError(GitError):
+    """Raised when a caller-supplied revision is not a safe ref token.
+
+    Unlike other git failures this is a 400-class client error: callers must
+    surface it instead of silently falling back to HEAD.
+    """
+
+
 @dataclass
 class CommitData:
     sha: str
@@ -77,7 +85,11 @@ def repo_name(path: str) -> str:
 
 def read_refs(repo_path: str) -> RefsData:
     data = RefsData()
-    data.head_sha = _run(repo_path, ["rev-parse", "HEAD"]).strip() or None
+    try:
+        data.head_sha = _run(repo_path, ["rev-parse", "HEAD"]).strip() or None
+    except GitError:
+        # Empty repo (no commits yet): no HEAD sha, keep a sensible branch name.
+        data.head_sha = None
     try:
         data.head = _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).strip() or "HEAD"
     except GitError:
@@ -110,10 +122,23 @@ def read_commits(
         args.append(f"--max-count={max_count}")
     # Revision must come BEFORE the "--" separator, otherwise git treats it
     # as a path spec and returns an empty log.
-    args.append(_sanitize_rev(ref))
+    args.append(resolve_rev(ref))
     args.append("--")
 
-    out = _run(repo_path, args)
+    try:
+        out = _run(repo_path, args)
+    except GitError as exc:
+        msg = str(exc).lower()
+        if "unknown revision" in msg or "bad revision" in msg:
+            # Ambiguous git message: "bad revision 'HEAD'" also means the
+            # repo simply has no commits yet — treat that as empty history.
+            if ref in ("HEAD", "") and not has_commits(repo_path):
+                return []
+            raise InvalidRefError(f"unknown ref: {ref!r}") from exc
+        if "does not have any commits yet" in msg or "bad default revision" in msg:
+            # Empty repo (no commits yet on this ref): return no commits.
+            return []
+        raise
     commits: list[CommitData] = []
     for record in out.split("\x1e"):
         record = record.strip("\n")
@@ -153,13 +178,48 @@ def _read_diff_stats(
     repo_path: str, ref: str, max_count: int | None,
 ) -> dict[str, tuple[int, int]]:
     """Fetch per-commit line additions/deletions via --numstat."""
-    import re
     args = ["log", "--numstat", "--format=%H"]
     if max_count:
         args.append(f"--max-count={max_count}")
-    args.append(_sanitize_rev(ref))
+    args.append(resolve_rev(ref))
     args.append("--")
     out = _run(repo_path, args)
+    return _parse_numstat(out)
+
+
+def read_diff_stats_for_shas(
+    repo_path: str, shas: list[str],
+) -> dict[str, tuple[int, int]]:
+    """Fetch additions/deletions for an explicit list of commits.
+
+    Uses a single `git diff-tree --numstat --stdin` call so paginated views
+    only pay for the rows actually served — no second full `git log` walk.
+    Unknown SHAs are reported as (0, 0); callers fall back gracefully.
+    """
+    if not shas:
+        return {}
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo_path, "diff-tree", "--numstat", "--no-renames",
+             "--format=%H", "--stdin"],
+            input=("\n".join(shas) + "\n").encode(),
+            capture_output=True,
+            timeout=GIT_TIMEOUT,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise GitError("git executable not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GitError("git diff-tree timed out") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
+        raise GitError(stderr or "git diff-tree failed") from exc
+    return _parse_numstat(proc.stdout.decode(errors="replace"))
+
+
+def _parse_numstat(out: str) -> dict[str, tuple[int, int]]:
+    """Parse `--numstat` output (SHA lines + add/del/file triples)."""
+    import re
 
     SHA_RE = re.compile(r"^[0-9a-f]{40}$")
     cur: str | None = None
@@ -184,17 +244,42 @@ def _read_diff_stats(
     return {sha: (a, d) for sha, (a, d) in acc.items()}
 
 
+def has_commits(repo_path: str) -> bool:
+    """True when the repo has at least one commit (HEAD resolves)."""
+    try:
+        _run(repo_path, ["rev-parse", "--verify", "--quiet", "HEAD"], timeout=5)
+    except GitError:
+        return False
+    return True
+
+
 def _is_valid_ref(ref: str) -> bool:
     # Defensive: only allow ref-looking tokens, never options.
     return bool(ref) and not ref.startswith("-") and " " not in ref and "\x00" not in ref
 
 
+def resolve_rev(ref: str) -> str:
+    """Return `ref` when safe, else raise InvalidRefError (400-class).
+
+    Previous behaviour silently fell back to HEAD, hiding caller bugs
+    (e.g. a typo'd branch name rendering the wrong history).
+    """
+    if _is_valid_ref(ref):
+        return ref
+    raise InvalidRefError(f"invalid ref: {ref!r}")
+
+
 def count_commits(repo_path: str, ref: str = "HEAD") -> int:
-    out = _run(repo_path, ["rev-list", "--count", _sanitize_rev(ref)])
+    try:
+        out = _run(repo_path, ["rev-list", "--count", resolve_rev(ref)])
+    except GitError:
+        # Empty repo (no HEAD yet) reports 0 instead of erroring.
+        return 0
     return int(out.strip() or 0)
 
 
 def _sanitize_rev(ref: str) -> str:
+    # Kept for backward compatibility; prefer resolve_rev for request paths.
     return ref if _is_valid_ref(ref) else "HEAD"
 
 

@@ -26,6 +26,10 @@ class RefView:
     layout_rows: list[dict] = field(default_factory=list)
     max_lane: int = 0
     loaded_at: float = 0.0
+    # Lazily-filled diff stats (sha -> (additions, deletions)) shared by the
+    # history pages and the timeline of this view — no second full `git log`.
+    stats: dict[str, tuple[int, int]] = field(default_factory=dict)
+    stats_full: bool = False
 
 
 @dataclass
@@ -52,9 +56,15 @@ class RepoCache:
         self._lock = threading.RLock()
         self._states: OrderedDict[str, RepoState] = OrderedDict()
 
+    @staticmethod
+    def _key(path: str) -> str:
+        # Same normalization as routes_repo.open_repo so every entry point
+        # (open/history/refs/watcher) hits the same cache slot.
+        return os.path.normpath(os.path.abspath(path))
+
     def get(self, path: str) -> RepoState | None:
         with self._lock:
-            return self._states.get(os.path.normpath(path))
+            return self._states.get(self._key(path))
 
     def require(self, path: str) -> RepoState:
         state = self.get(path)
@@ -65,15 +75,15 @@ class RepoCache:
     def put(self, state: RepoState) -> RepoState:
         with self._lock:
             state.loaded_at = time.time()
-            self._states[os.path.normpath(state.path)] = state
-            self._states.move_to_end(os.path.normpath(state.path))
+            self._states[self._key(state.path)] = state
+            self._states.move_to_end(self._key(state.path))
             while len(self._states) > MAX_CACHED_REPOS:
                 self._states.popitem(last=False)
         return state
 
     def invalidate(self, path: str) -> None:
         with self._lock:
-            self._states.pop(os.path.normpath(path), None)
+            self._states.pop(self._key(path), None)
 
     def all_paths(self) -> list[str]:
         with self._lock:

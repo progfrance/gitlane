@@ -257,3 +257,69 @@ class TestEvents:
             # Session alive: a send must not raise (server keeps reading).
             ws.send_text("ping")
             assert ws.send_text("pong") is None
+
+
+class TestLazyStats:
+    """Diff stats are served per page (no full double git log on open)."""
+
+    def test_history_serves_real_stats(self, opened, client):
+        r = client.get("/history", params={"path": opened, "limit": 50})
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert any(i["additions"] + i["deletions"] > 0 for i in items)
+
+    def test_timeline_has_adds_dels(self, opened, client):
+        r = client.get("/timeline", params={"path": opened})
+        assert r.status_code == 200
+        points = r.json()["points"]
+        assert any("adds" in p and "dels" in p for p in points)
+        assert sum(p["adds"] for p in points) + sum(p["dels"] for p in points) > 0
+
+    def test_stats_cached_on_view(self, opened, client):
+        from app.services.cache import cache
+        from app.services import view_builder
+
+        client.get("/history", params={"path": opened, "limit": 1})
+        state = cache.require(opened)
+        view = view_builder.get_view(state, opened, "HEAD")
+        assert view.stats, "served page SHAs must be cached on the view"
+
+
+class TestInvalidRef:
+    def test_history_option_like_ref_returns_400(self, opened, client):
+        r = client.get("/history", params={"path": opened, "ref": "--all"})
+        assert r.status_code == 400
+
+    def test_timeline_option_like_ref_returns_400(self, opened, client):
+        r = client.get("/timeline", params={"path": opened, "ref": "--all"})
+        assert r.status_code == 400
+
+
+class TestEmptyRepo:
+    def test_open_empty_repo_ok(self, client, tmp_path):
+        import subprocess
+
+        repo = tmp_path / "empty-repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init", "-q", "-b", "main"],
+            check=True, capture_output=True, timeout=30,
+        )
+        r = client.post("/repos/open", json={"path": str(repo)})
+        assert r.status_code == 200
+        assert r.json()["repo"]["commit_count"] == 0
+
+    def test_history_empty_repo_is_empty(self, client, tmp_path):
+        import subprocess
+
+        repo = tmp_path / "empty-repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init", "-q", "-b", "main"],
+            check=True, capture_output=True, timeout=30,
+        )
+        client.post("/repos/open", json={"path": str(repo)})
+        r = client.get("/history", params={"path": str(repo)})
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
+        assert r.json()["items"] == []

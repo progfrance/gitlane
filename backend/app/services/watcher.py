@@ -1,8 +1,9 @@
 """Filesystem watcher: polls .git metadata and broadcasts change events.
 
 Light polling (2s) on HEAD, refs and index mtimes — no external dependency,
-works on every platform. On change, the affected repo cache entry is
-invalidated and a websocket event is broadcast to all clients (PLAN 7.4).
+works on every platform. On change, cheap checks (rev-list --count, head sha)
+decide whether a reload is needed before paying for a full history re-read
+(PLAN 7.4).
 """
 from __future__ import annotations
 
@@ -11,9 +12,11 @@ import threading
 import time
 
 from .cache import cache
-from .git_reader import GitError, read_commits, read_refs
+from .git_reader import GitError, count_commits, read_refs
 
 POLL_INTERVAL = 2.0
+# Coalesce rapid successive writes (commit + index + logs update together).
+DEBOUNCE_SECONDS = 1.0
 
 
 def _snapshot(repo_path: str) -> tuple:
@@ -46,6 +49,7 @@ class RepoWatcher(threading.Thread):
         super().__init__(daemon=True, name="gitlane-watcher")
         self.manager = manager
         self._signatures: dict[str, tuple] = {}
+        self._pending: dict[str, float] = {}
         self._stop = threading.Event()
 
     def stop(self) -> None:
@@ -53,6 +57,7 @@ class RepoWatcher(threading.Thread):
 
     def run(self) -> None:
         while not self._stop.wait(POLL_INTERVAL):
+            now = time.monotonic()
             for path in cache.all_paths():
                 state = cache.get(path)
                 if state is None:
@@ -66,25 +71,48 @@ class RepoWatcher(threading.Thread):
                 if sig == old:
                     continue
                 self._signatures[path] = sig
-                self._on_change(state)
+                # Debounce: wait for the write burst to settle before re-reading.
+                self._pending[path] = now
+            for path, changed_at in list(self._pending.items()):
+                if now - changed_at >= DEBOUNCE_SECONDS:
+                    del self._pending[path]
+                    state = cache.get(path)
+                    if state is not None:
+                        self._on_change(state)
 
     def _on_change(self, state) -> None:
         events: list[dict] = [{"type": "repo_updated", "path": state.path}]
         try:
             refs = read_refs(state.path)
-            new_head_sha = refs.head_sha
-            new_count = len(read_commits(state.path, ref=refs.head))
-            old_count = len(state.commits)
-            if new_head_sha and new_head_sha != state.head_sha:
-                events.append({"type": "head_changed", "path": state.path, "head": refs.head})
-            if new_count > old_count:
-                events.append({"type": "new_commit", "path": state.path, "count": new_count})
-            # Refresh cached state (refs, commits, layout) for next fetches.
-            from ..api.routes_repo import reload_state
+        except GitError:
+            return
+        try:
+            # Cheap count via rev-list: no full history parse just to detect
+            # new commits.
+            new_count = count_commits(state.path, refs.head)
+        except GitError:
+            new_count = len(state.commits)
+        old_count = len(state.commits)
+        new_head_sha = refs.head_sha
+        head_changed = bool(new_head_sha) and new_head_sha != state.head_sha
+        if head_changed:
+            events.append({"type": "head_changed", "path": state.path, "head": refs.head})
+        if new_count > old_count:
+            events.append({"type": "new_commit", "path": state.path, "count": new_count})
+        # Refs-only changes (new branch, tag) still need a state refresh so
+        # the branch selector sees them; skip the expensive commit re-read
+        # when nothing actually moved.
+        if head_changed or new_count != old_count:
+            try:
+                from ..api.routes_repo import reload_state
 
-            reload_state(state.path)
-        except (GitError, OSError):
-            pass
+                reload_state(state.path)
+            except (GitError, OSError):
+                pass
+        else:
+            state.refs = refs
+            state.head = refs.head
+            state.head_sha = refs.head_sha
         for ev in events:
             self.manager.broadcast_threadsafe(ev)
 

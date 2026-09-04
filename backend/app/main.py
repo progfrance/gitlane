@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,11 +10,19 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import routes_browse, routes_events, routes_history, routes_recent, routes_refs, routes_repo
-from .services.watcher import start_watcher
+from .services.watcher import start_watcher, stop_watcher
 from .services import recent
 from .services.cache import cache
 
-app = FastAPI(title="GitLane", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_watcher(routes_events.manager)
+    yield
+    stop_watcher()
+
+
+app = FastAPI(title="GitLane", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,11 +37,6 @@ app.include_router(routes_refs.router)
 app.include_router(routes_events.router)
 app.include_router(routes_recent.router)
 app.include_router(routes_browse.router)
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    start_watcher(routes_events.manager)
 
 
 @app.get("/api/health")

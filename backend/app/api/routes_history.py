@@ -31,7 +31,23 @@ def _encode_cursor(offset: int) -> str:
     return base64.b64encode(str(offset).encode()).decode()
 
 
-def _badges_for(state, sha: str, decorations: list[str]) -> list[RefBadge]:
+def _build_badge_index(state) -> dict[str, list[RefBadge]]:
+    """Map sha -> ref badges from for-each-ref data, built ONCE per request.
+
+    Previously `_badges_for` looped over every branch/tag for every commit
+    (O(commits x refs)); the inverted index makes per-commit lookup O(1).
+    """
+    index: dict[str, list[RefBadge]] = {}
+    for name, rsha in state.refs.local_branches.items():
+        index.setdefault(rsha, []).append(RefBadge(type="local_branch", name=name))
+    for name, rsha in state.refs.remote_branches.items():
+        index.setdefault(rsha, []).append(RefBadge(type="remote_branch", name=name))
+    for name, rsha in state.refs.tags.items():
+        index.setdefault(rsha, []).append(RefBadge(type="tag", name=name))
+    return index
+
+
+def _badges_for(index: dict[str, list[RefBadge]], sha: str, decorations: list[str]) -> list[RefBadge]:
     badges: list[RefBadge] = []
     for deco in decorations:
         if deco.startswith("HEAD -> "):
@@ -42,17 +58,12 @@ def _badges_for(state, sha: str, decorations: list[str]) -> list[RefBadge]:
             badges.append(RefBadge(type="remote_branch", name=deco))
         else:
             badges.append(RefBadge(type="local_branch", name=deco))
-    # Guarantee explicit refs known to for-each-ref (covers packed/edge cases).
+    # Merge explicit refs known to for-each-ref (covers packed/edge cases).
     known = {b.name for b in badges}
-    for name, rsha in state.refs.local_branches.items():
-        if rsha == sha and name not in known:
-            badges.append(RefBadge(type="local_branch", name=name))
-    for name, rsha in state.refs.remote_branches.items():
-        if rsha == sha and name not in known:
-            badges.append(RefBadge(type="remote_branch", name=name))
-    for name, rsha in state.refs.tags.items():
-        if rsha == sha and name not in known:
-            badges.append(RefBadge(type="tag", name=name))
+    for b in index.get(sha, ()):
+        if b.name not in known:
+            badges.append(b)
+            known.add(b.name)
     return badges
 
 
@@ -64,14 +75,25 @@ def _status_checks(sha: str) -> list[str]:
     return [palette[(digest[i + 1] + i) % len(palette)] for i in range(count)]
 
 
-def _matches(commit, q_lower: str, badge_names: set[str]) -> bool:
-    if q_lower in commit.subject.lower():
+def _matches(pre: tuple[str, str, str], q_lower: str, badge_names: set[str]) -> bool:
+    subject_lower, sha_lower, author_lower = pre
+    if q_lower in subject_lower:
         return True
-    if q_lower in commit.sha.lower():
+    if q_lower in sha_lower:
         return True
-    if q_lower in commit.author_name.lower():
+    if q_lower in author_lower:
         return True
-    return any(q_lower in name.lower() for name in badge_names)
+    return any(q_lower in name for name in badge_names)
+
+
+def _resolve_view(state, path: str, ref: str):
+    """Resolve the requested ref to its cached view (400 on invalid ref)."""
+    try:
+        return view_builder.get_view(state, path, ref)
+    except git_reader.InvalidRefError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except git_reader.GitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/history", response_model=HistoryEnvelope)
@@ -87,34 +109,44 @@ def history(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
 
-    # Resolve the requested ref → view (cached, or freshly built).
-    try:
-        view = view_builder.get_view(state, path, ref)
-    except git_reader.GitError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    view = _resolve_view(state, path, ref)
 
     commits = view.commits
     q = q.strip()
     offset = _decode_cursor(cursor)
 
+    # Per-request badge index (O(refs)) + precomputed lowercase haystacks
+    # so the search scan stays O(commits) with cheap substring checks.
+    badge_index = _build_badge_index(state)
+    precomputed: list[tuple] = []
+    for c in commits:
+        badges = _badges_for(badge_index, c.sha, c.decorations)
+        precomputed.append((
+            c,
+            badges,
+            (c.subject.lower(), c.sha.lower(), c.author_name.lower()),
+            {b.name.lower() for b in badges},
+        ))
+
     if q:
         q_lower = q.lower()
-        filtered = []
-        for c in commits:
-            badges = _badges_for(state, c.sha, c.decorations)
-            if _matches(c, q_lower, {b.name for b in badges}):
-                filtered.append((c, badges))
+        filtered = [(c, b) for c, b, pre, names in precomputed if _matches(pre, q_lower, names)]
     else:
-        filtered = [(c, _badges_for(state, c.sha, c.decorations)) for c in commits]
+        filtered = [(c, b) for c, b, _pre, _names in precomputed]
 
     page = filtered[offset : offset + limit]
     has_more = offset + limit < len(filtered)
+
+    # Lazy diff stats: one git call for the served page only, cached on the view.
+    stats = view_builder.ensure_stats(path, view, [c.sha for c, _ in page])
+
     layout_by_sha = {r["sha"]: r for r in view.layout_rows}
     items = []
     for c, badges in page:
         lr = layout_by_sha.get(c.sha, {})
         node = lr.get("node") or {"x": 24, "y": 16, "r": 6.5, "color": "#0091ff"}
         segs = lr.get("segments") or []
+        adds, dels = stats.get(c.sha, (0, 0))
         items.append(
             CommitItem(
                 sha=c.sha,
@@ -131,8 +163,8 @@ def history(
                 node=node,
                 segments=segs,
                 status_checks=_status_checks(c.sha),
-                additions=c.additions,
-                deletions=c.deletions,
+                additions=adds,
+                deletions=dels,
                 is_head=c.sha == view.head_sha,
             )
         )
@@ -157,13 +189,13 @@ def timeline(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
 
-    try:
-        view = view_builder.get_view(state, path, ref)
-    except git_reader.GitError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    view = _resolve_view(state, path, ref)
 
+    # Stats converge lazily: pages already served are cached, the remainder
+    # is fetched once here so the sparkline always shows real adds/dels.
+    view_builder.ensure_all_stats(path, view)
     return build_timeline(
         [c.timestamp for c in view.commits], buckets,
-        additions=[c.additions for c in view.commits],
-        deletions=[c.deletions for c in view.commits],
+        additions=[view.stats.get(c.sha, (0, 0))[0] for c in view.commits],
+        deletions=[view.stats.get(c.sha, (0, 0))[1] for c in view.commits],
     )

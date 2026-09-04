@@ -13,8 +13,6 @@ import MiniTimeline from "../components/MiniTimeline";
 import VirtualCommitTable from "../components/VirtualCommitTable";
 import { graphWidth as computeGraphWidth } from "../graph/coords";
 
-const DEFAULT_REPO = "C:/Users/Dell/Desktop/MesProjets/gitlane";
-
 function useStore() {
   return useSyncExternalStore(repoStore.subscribe, repoStore.get);
 }
@@ -22,12 +20,15 @@ function useStore() {
 export default function App() {
   const s = useStore();
   const { t } = useI18n();
-  const [pathInput, setPathInput] = useState(DEFAULT_REPO);
+  const [pathInput, setPathInput] = useState("");
   const [scroll, setScroll] = useState({ top: 0, height: 1, client: 1 });
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | undefined>(undefined);
   const loadSeq = useRef(0); // stale-response guard: only the latest load writes
+  // Set when WS events arrive while the tab is hidden; the focus handler
+  // reloads only in that case instead of re-reading git on every alt-tab.
+  const staleWhileHidden = useRef(false);
 
   const load = useCallback(async (path: string, q: string, reopen = true, ref?: string) => {
     const seq = ++loadSeq.current;
@@ -78,6 +79,11 @@ export default function App() {
     });
   }, []);
 
+  const resetScrollTop = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, []);
+
   // Load the next page of history (infinite scroll).
   const loadMore = useCallback(async () => {
     const cur = repoStore.get();
@@ -104,11 +110,16 @@ export default function App() {
   }, []);
 
   // Initial load: prefer the repo already open server-side (picker / last
-  // session), fall back to DEFAULT_REPO only when nothing is open.
+  // session). When nothing is open anywhere, go to /picker instead of
+  // guessing a machine-specific default path.
   useEffect(() => {
     (async () => {
-      const current = await fetchCurrentRepo();
-      await Promise.all([load(current?.path ?? DEFAULT_REPO, ""), refreshMeta(current?.path ?? null)]);
+      const current = await fetchCurrentRepo().catch(() => null);
+      if (!current?.path) {
+        window.location.href = "/picker";
+        return;
+      }
+      await Promise.all([load(current.path, ""), refreshMeta(current.path)]);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -127,21 +138,28 @@ export default function App() {
   const handleBranch = useCallback((ref: string) => {
     const cur = repoStore.get();
     repoStore.set({ activeRef: ref, items: [], nextCursor: null, hasMore: false, query: "" });
+    resetScrollTop();
     void load(cur.repoPath!, "", false, ref);
-  }, [load]);
+  }, [load, resetScrollTop]);
 
   // Repo switch from the header selector.
   const handleRepo = useCallback((path: string) => {
     repoStore.set({ activeRef: "HEAD", query: "" });
+    resetScrollTop();
     void load(path, "", true);
     void refreshMeta(path);
-  }, [load, refreshMeta]);
+  }, [load, refreshMeta, resetScrollTop]);
 
   // Keyboard shortcuts (plan §10.1).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o" && !typing) {
+        e.preventDefault();
+        window.location.href = "/picker";
+        return;
+      }
       if (e.key === "/" && !typing) {
         e.preventDefault();
         searchRef.current?.focus();
@@ -163,9 +181,13 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Auto-refresh on window focus (lightweight complement to the websocket).
+  // Reload on window focus ONLY when WS events arrived while hidden — the
+  // websocket already covers the visible case, so unconditional reloads
+  // just re-read git on every alt-tab for nothing.
   useEffect(() => {
     const onFocus = () => {
+      if (!staleWhileHidden.current) return;
+      staleWhileHidden.current = false;
       const cur = repoStore.get();
       if (cur.repoPath) void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
     };
@@ -174,11 +196,18 @@ export default function App() {
   }, [load]);
 
   // Live updates: websocket events from the .git watcher (plan §10.5).
+  // Events received while the tab is hidden only mark state stale; the
+  // focus handler above performs the single catch-up reload.
   useRepoEvents((ev) => {
     const cur = repoStore.get();
     if (!cur.repoPath) return;
     if (ev.path && ev.path !== cur.repoPath) return;
     if (ev.type === "repo_updated" || ev.type === "new_commit" || ev.type === "head_changed") {
+      if (document.hidden) {
+        staleWhileHidden.current = true;
+        return;
+      }
+      staleWhileHidden.current = false;
       void load(cur.repoPath, cur.query, false, cur.activeRef === "HEAD" ? undefined : cur.activeRef);
       void refreshMeta(cur.repoPath);
     }
@@ -222,8 +251,9 @@ export default function App() {
               <span className="state-title">{t("failed_open")}</span>
               <span>{s.error}</span>
               <div className="repo-picker">
-                <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} />
+                <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} placeholder={t("manual_ph")} />
                 <button className="toolbar-btn" onClick={() => void load(pathInput, s.query)}>{t("open")}</button>
+                <button className="toolbar-btn" onClick={() => { window.location.href = "/picker"; }}>{t("browse_repo")}</button>
               </div>
             </div>
           )}

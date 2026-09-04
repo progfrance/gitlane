@@ -14,7 +14,7 @@ router = APIRouter(tags=["repo"])
 
 @router.post("/repos/open", response_model=OpenRepoResponse)
 def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
-    path = os.path.normpath(body.path)
+    path = os.path.normpath(os.path.abspath(body.path))
     if not os.path.isabs(path):
         raise HTTPException(status_code=400, detail="path must be absolute")
     if not os.path.isdir(path):
@@ -36,7 +36,11 @@ def open_repo(body: OpenRepoRequest) -> OpenRepoResponse:
 
 
 def reload_state(path: str) -> RepoState:
-    """(Re)read refs, commits and lane layout for an open repo (HEAD view)."""
+    """(Re)read refs, commits and lane layout for an open repo (HEAD view).
+
+    Empty repos (no commits yet) open cleanly with zero commits instead of
+    a 500 from `rev-parse HEAD`.
+    """
     try:
         refs = git_reader.read_refs(path)
         view = view_builder.build_view(path, refs.head)
