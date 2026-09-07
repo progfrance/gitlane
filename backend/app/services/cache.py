@@ -17,7 +17,10 @@ from .git_reader import CommitData, RefsData
 
 log = logging.getLogger("gitlane.cache")
 
-MAX_CACHED_REPOS = 2
+# One entry per opened repo path. 10 matches the recent-repos list size so
+# switching between recently used repos never evicts a still-referenced
+# entry (an evicted repo made in-flight /history//refs calls 404 mid-switch).
+MAX_CACHED_REPOS = 10
 MAX_VIEWS_PER_REPO = 3
 # Cap on lazily-filled diff stats per view: a long-running session on a 10k
 # repo with infinite scroll used to grow this dict unbounded. 5k entries

@@ -456,6 +456,12 @@ body {
 
 .commit-search-hit .msg-text { color: var(--info); }
 
+/* Parent-context rows kept for graph connectivity during a search: dimmed
+   so the actual hits stand out, but still readable and clickable. */
+.commit-context { opacity: 0.45; }
+.commit-context:hover { opacity: 0.85; }
+.commit-context.selected { opacity: 1; }
+
 /* ---------- refs pills ---------- */
 
 .refs-wrap {
@@ -676,27 +682,27 @@ body {
 
 /* ---------- commit detail drawer ---------- */
 
+.detail-veil {
+  position: fixed;
+  inset: 0;
+  top: 48px;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 199;
+  cursor: pointer;
+}
+
 .detail-drawer {
   position: fixed;
   top: 48px;
   right: 0;
   bottom: 0;
   width: min(420px, 92vw);
-  background: var(--bg-app);
+  background: var(--bg-panel);
   border-left: 1px solid var(--border-soft);
   box-shadow: -8px 0 28px rgba(0, 0, 0, 0.10);
   display: flex;
   flex-direction: column;
   z-index: 200;
-}
-
-.detail-drawer[aria-modal="true"]::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.18);
-  z-index: -1;
-  pointer-events: none;
 }
 
 .detail-header {
@@ -766,10 +772,30 @@ body {
   font-family: var(--font-mono);
 }
 
-.detail-drawer .commit-sha,
-.detail-drawer a {
+.detail-drawer .commit-sha {
   pointer-events: none;
   cursor: default;
+}
+
+.parent-link {
+  background: none;
+  border: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--info);
+  cursor: pointer;
+  border-bottom: 1px dotted transparent;
+}
+
+.parent-link:hover {
+  text-decoration: underline;
+  color: #0077d6;
+}
+
+.parent-link:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
 }
 
 .detail-parents {

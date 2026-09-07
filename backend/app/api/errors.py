@@ -16,13 +16,24 @@ log = logging.getLogger("gitlane.api")
 
 
 def require_state(path: str):
-    """Fetch the cached repo state or raise 404."""
-    from ..services.cache import cache
+    """Fetch the cached repo state, self-healing an LRU eviction.
 
-    try:
-        return cache.require(path)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="repo not open — call /repos/open first") from exc
+    A repo evicted from the cache (e.g. the user switched away and back) is
+    transparently reloaded from disk when the path is still a valid git
+    repository — in-flight /history or /refs calls must not 404 mid-switch.
+    Only paths that are not (or no longer) a repo raise 404.
+    """
+    import os
+
+    from ..services.cache import cache
+    from .routes_repo import reload_state
+
+    state = cache.get(path)
+    if state is not None:
+        return state
+    if os.path.isdir(path) and git_reader.is_git_repo(path):
+        return reload_state(path)
+    raise HTTPException(status_code=404, detail="repo not open — call /repos/open first")
 
 
 def resolve_view(state, path: str, ref: str):

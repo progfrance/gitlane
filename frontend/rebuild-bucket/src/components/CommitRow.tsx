@@ -36,6 +36,7 @@ function CommitRowInner({
   commit, index, remote, hovered, selected, query, onHover, onSelect,
 }: Props) {
   const hit = query.length > 0 && commit.message_subject.toLowerCase().includes(query.toLowerCase());
+  const dimmed = query.length > 0 && commit.matched === false;
   const laneTint = commit.node ? hexToRgba(commit.node.color, 0.12) : undefined;
   return (
     <div
@@ -49,6 +50,7 @@ function CommitRowInner({
         hovered ? "hover" : "",
         selected ? "selected" : "",
         hit ? "commit-search-hit" : "",
+        dimmed ? "commit-context" : "",
       ].join(" ")}
       style={laneTint ? ({ backgroundColor: laneTint } as React.CSSProperties) : undefined}
       onMouseEnter={() => onHover(commit.sha)}

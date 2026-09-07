@@ -11,6 +11,8 @@ interface Props {
   recentRepos: { path: string; name: string }[];
   query: string;
   total: number;
+  /** Search hits only (excludes parent-context rows); undefined = no query. */
+  matchedCount?: number;
   isRefreshing: boolean;
   onQuery: (q: string) => void;
   onRefresh: () => void;
@@ -34,7 +36,7 @@ const BranchIcon = (
 );
 
 export default function TopToolbar({
-  repo, activeRef, branches, recentRepos, query, total, isRefreshing,
+  repo, activeRef, branches, recentRepos, query, total, matchedCount, isRefreshing,
   onQuery, onRefresh, onBranch, onRepo, searchRef,
 }: Props) {
   const { t, locale, setLocale } = useI18n();
@@ -129,7 +131,11 @@ export default function TopToolbar({
       </button>
       <span className="toolbar-sep" />
       <span className="toolbar-count">
-        {repo ? t("commits_count", { total }) : t("no_repo")}
+        {!repo
+          ? t("no_repo")
+          : matchedCount != null
+            ? t("search_count", { matched: matchedCount, total })
+            : t("commits_count", { total })}
       </span>
       <span className="toolbar-spacer" />
       <input

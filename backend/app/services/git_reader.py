@@ -369,32 +369,22 @@ class CommitDetailData:
     files: list[dict] = field(default_factory=list)
 
 
-def _parse_name_status(out: str) -> list[dict]:
-    """Parse `git show --name-status --format=` output into file entries."""
-    files: list[dict] = []
-    for line in out.splitlines():
-        if not line.strip():
-            continue
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        code, rest = parts[0], parts[1:]
-        letter = code[:1].upper()
-        if letter == "A":
-            status = "added"
-        elif letter == "D":
-            status = "deleted"
-        elif letter == "R":
-            status = "renamed"
-        elif letter == "M":
-            status = "modified"
-        else:
-            status = "other"
-        # Rename format: R100\told\tnew — display the new path.
-        path = rest[-1] if rest else ""
-        if path:
-            files.append({"path": path, "status": status})
-    return files
+def _numstat_new_path(p: str) -> str:
+    """Resolve the post-image path of a `--numstat` path field.
+
+    Plain paths pass through; renames arrive as `old => new`, possibly
+    with git's brace collapsing (`dir/{a.txt => b.txt}`).
+    """
+    if " => " not in p:
+        return p
+    lbrace, rbrace = p.find("{"), p.find("}")
+    arrow = p.find(" => ")
+    if 0 <= lbrace < arrow < rbrace:
+        prefix, inner, suffix = p[:lbrace], p[lbrace + 1 : rbrace], p[rbrace + 1 :]
+        _, _, new_inner = inner.partition(" => ")
+        return f"{prefix}{new_inner}{suffix}"
+    _, _, new = p.partition(" => ")
+    return new
 
 
 # LRU cache for commit-detail reads: keyboard navigation (j/k) re-selects
@@ -428,16 +418,23 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
     if not _is_valid_ref(sha):
         raise InvalidRefError(f"invalid sha: {sha!r}")
 
-    # One `git show` call with both `--name-status` and `--numstat`; the
-    # output is `\0`-separated by `git`, so we can parse both sections
-    # without a second subprocess.
+    # One `git show` call with both `--raw` and `--numstat`: unlike
+    # `--name-status` (a mutually exclusive diff flag that would swallow
+    # `--numstat`), `--raw` is a separate output mode and coexists with it,
+    # so the output carries raw status lines plus numstat add/del triples.
+    # `--first-parent` keeps merges well-defined: the drawer shows what the
+    # merge brought in versus its first parent (raw and numstat agree there;
+    # without it `--raw` emits nothing on merges while `--numstat` emits a
+    # combined diff, leaving the file list empty).
     try:
         out = _run(
             repo_path,
             [
                 "show",
-                "--name-status",
+                "--raw",
                 "--numstat",
+                "--no-renames",
+                "--first-parent",
                 "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e",
                 sha,
             ],
@@ -455,9 +452,11 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
         raise InvalidRefError(f"unknown commit: {sha!r}")
     full_sha, parents, an, ae, at, subject, body = (parts + [""] * 7)[:7]
 
-    # `git show` separates sections with a NUL byte. Split the body section
-    # into name-status (first half) and numstat (second half) by detecting
-    # the column count of each line.
+    # Parse the body section: `--raw` lines carry the file status, `--numstat`
+    # lines the add/del counts. Both name the post-image path (renames shown
+    # as `old => new` in numstat), which joins the two halves one file at a
+    # time. `--no-renames` keeps the raw/downloaded path identical so the
+    # join key matches without brace-expansion.
     files: list[dict] = []
     per_file: dict[str, list[int]] = {}
     total_adds = 0
@@ -465,9 +464,10 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
     if body_out:
         for line in body_out.splitlines():
             tabs = line.split("\t")
-            if len(tabs) == 2:
-                # name-status row: "<code>\t<path>"
-                code, rest = tabs[0], tabs[1]
+            if tabs and tabs[0].startswith(":"):
+                # raw row: ":<oldmode> <newmode> <oldsha> <newsha> <CODE>\t<path>"
+                info, _, path = line.partition("\t")
+                code = info.rsplit(" ", 1)[-1].strip()
                 letter = code[:1].upper()
                 if letter == "A":
                     status = "added"
@@ -479,12 +479,13 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
                     status = "modified"
                 else:
                     status = "other"
-                path = rest
+                path = path.strip()
                 if path:
                     files.append({"path": path, "status": status})
             elif len(tabs) == 3 and tabs[0].isdigit() and tabs[1].isdigit():
                 # numstat row: "<adds>\t<dels>\t<path>"
-                adds, dels, path = int(tabs[0]), int(tabs[1]), tabs[2]
+                adds, dels = int(tabs[0]), int(tabs[1])
+                path = _numstat_new_path(tabs[2].strip())
                 per_file[path] = [adds, dels]
                 total_adds += adds
                 total_dels += dels

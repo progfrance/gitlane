@@ -142,19 +142,65 @@ def history(
 
     if q:
         q_lower = q.lower()
-        filtered = [(c, b) for c, b, pre, names in precomputed if _matches(pre, q_lower, names)]
+        matched = [(c, b) for c, b, pre, names in precomputed if _matches(pre, q_lower, names)]
+        # Include the parents of every match (transitively along first-parent
+        # ancestry within this view) so the lane graph stays connected: the
+        # search hits render on the same lanes as in the full history, with
+        # the non-matching ancestors shown dimmed as context.
+        if matched:
+            by_sha = {c.sha: (c, b) for c, b, _pre, _names in precomputed}
+            matched_shas = {c.sha for c, _ in matched}
+            queue = list(matched_shas)
+            context: list[tuple] = []
+            seen = set(matched_shas)
+            while queue:
+                sha = queue.pop()
+                entry = by_sha.get(sha)
+                if entry is None:
+                    continue
+                for p in entry[0].parents:
+                    if p in seen or p not in by_sha:
+                        continue
+                    seen.add(p)
+                    context.append(by_sha[p])
+                    queue.append(p)
+            # Restore chronological order (children first, like the view).
+            order = {c.sha: i for i, (c, _b, _pre, _names) in enumerate(precomputed)}
+            filtered = sorted(
+                [(c, b, True) for c, b in matched] + [(c, b, False) for c, b in context],
+                key=lambda t: order.get(t[0].sha, 0),
+            )
+        else:
+            filtered = []
     else:
-        filtered = [(c, b) for c, b, _pre, _names in precomputed]
+        filtered = [(c, b, True) for c, b, _pre, _names in precomputed]
 
     page = filtered[offset : offset + limit]
     has_more = offset + limit < len(filtered)
 
     # Lazy diff stats: one git call for the served page only, cached on the view.
-    stats = view_builder.ensure_stats(path, view, [c.sha for c, _ in page])
+    stats = view_builder.ensure_stats(path, view, [c.sha for c, _, _ in page])
 
-    layout_by_sha = {r["sha"]: r for r in view.layout_rows if r["sha"] in {c.sha for c, _ in page}}
+    if q:
+        # Recompute the lane layout on the served page (matches + parent
+        # context) so graph nodes/segments stay connected across the gaps
+        # left by non-matching commits — full-history positions would draw
+        # dangling curves pointing at rows that are not rendered.
+        from ..services.lane_layout import compute_layout
+        page_shas = [c.sha for c, _, _ in page]
+        page_set = set(page_shas)
+        parents_map = {c.sha: [p for p in c.parents if p in page_set] for c, _, _ in page}
+        page_rows, page_max_lane = compute_layout(page_shas, parents_map)
+        layout_by_sha = {
+            r.sha: {"node": r.node, "segments": r.segments, "lane_index": r.lane_index}
+            for r in page_rows
+        }
+        max_lane = page_max_lane
+    else:
+        layout_by_sha = {r["sha"]: r for r in view.layout_rows if r["sha"] in {c.sha for c, _, _ in page}}
+        max_lane = view.max_lane
     items = []
-    for c, badges in page:
+    for c, badges, is_match in page:
         lr = layout_by_sha.get(c.sha, {})
         node = lr.get("node") or {"x": 24, "y": 16, "r": 6.5, "color": "#0091ff"}
         segs = lr.get("segments") or []
@@ -175,6 +221,7 @@ def history(
                 additions=adds,
                 deletions=dels,
                 is_head=c.sha == view.head_sha,
+                matched=is_match,
             )
         )
     return HistoryEnvelope(
@@ -182,7 +229,8 @@ def history(
         next_cursor=_encode_cursor(offset + limit) if has_more else None,
         has_more=has_more,
         total=len(filtered),
-        max_lane=view.max_lane,
+        matched_total=sum(1 for _c, _b, m in filtered if m),
+        max_lane=max_lane,
         active_ref=view.ref,
     )
 

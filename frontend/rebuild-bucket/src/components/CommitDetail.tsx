@@ -12,6 +12,7 @@ interface Props {
   repoPath: string | null;
   sha: string | null;
   onClose: () => void;
+  onNavigate: (sha: string) => void;
 }
 
 function statusClass(status: string): string {
@@ -25,7 +26,7 @@ function statusClass(status: string): string {
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
+export default function CommitDetailPanel({ repoPath, sha, onClose, onNavigate }: Props) {
   const { t } = useI18n();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -110,13 +111,15 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
   if (!sha) return null;
 
   return (
-    <aside
-      ref={drawerRef}
-      className="detail-drawer"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("detail_title")}
-    >
+    <>
+      <div className="detail-veil" onClick={onClose} aria-hidden="true" />
+      <aside
+        ref={drawerRef}
+        className="detail-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("detail_title")}
+      >
       <div className="detail-header">
         <kbd className="detail-shortcut-hint" aria-hidden="true">⏎</kbd>
         <span className="detail-sha mono">{sha.slice(0, 7)}</span>
@@ -157,7 +160,15 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
           {detail.parents.length > 0 && (
             <div className="detail-parent-list mono">
               {detail.parents.map((p) => (
-                <span key={p} className="commit-sha">{p.slice(0, 7)}</span>
+                <button
+                  key={p}
+                  type="button"
+                  className="parent-link mono"
+                  onClick={() => onNavigate(p)}
+                  title={p}
+                >
+                  {p.slice(0, 7)}
+                </button>
               ))}
             </div>
           )}
@@ -185,6 +196,7 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
           )}
         </div>
       )}
-    </aside>
+      </aside>
+    </>
   );
 }

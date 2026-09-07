@@ -91,11 +91,35 @@ class TestHistory:
         r = client.get("/history", params={"path": opened, "q": "feature"})
         body = r.json()
         assert body["total"] >= 1
-        assert all("feature" in i["message_subject"].lower() for i in body["items"])
+        matched = [i for i in body["items"] if i["matched"]]
+        assert matched
+        assert all("feature" in i["message_subject"].lower() for i in matched)
+
+    def test_search_includes_parents_as_context(self, opened, client):
+        # "c2 on feature" is a child of c1: the search hit plus its parent
+        # chain must be present so the lane graph stays connected.
+        r = client.get("/history", params={"path": opened, "q": "c2 on feature", "limit": 50})
+        body = r.json()
+        assert body["total"] >= 2
+        hits = [i for i in body["items"] if i["matched"]]
+        context = [i for i in body["items"] if not i["matched"]]
+        assert len(hits) == 1 and hits[0]["message_subject"] == "c2 on feature"
+        assert context, "parents of the hit must be included as context"
+        hit_parents = set(hits[0]["parents"])
+        assert any(c["sha"] in hit_parents for c in context)
 
     def test_history_requires_open(self, client, tmp_path):
         r = client.get("/history", params={"path": str(tmp_path)})
         assert r.status_code == 404
+
+    def test_history_reopens_evicted_repo(self, client, git_repo):
+        # Regression: switching repos evicted the previous entry and an
+        # in-flight /history call then failed with "repo not open". The
+        # cache now self-heals by reloading a valid repo from disk.
+        cache.invalidate(str(git_repo))
+        r = client.get("/history", params={"path": str(git_repo)})
+        assert r.status_code == 200
+        assert r.json()["items"]
 
 
 class TestRefs:
@@ -370,6 +394,35 @@ class TestCommitDetail:
     def test_detail_requires_open(self, client, tmp_path):
         r = client.get("/commit/detail", params={"path": str(tmp_path), "sha": "deadbeef"})
         assert r.status_code == 404
+
+    def test_detail_stats_match_numstat(self, opened, client):
+        """Regression: --name-status used to swallow --numstat (totals +0/-0)."""
+        import subprocess
+        sha = client.get("/history", params={"path": opened, "limit": 1}).json()["items"][0]["sha"]
+        numstat = subprocess.run(
+            ["git", "-C", opened, "show", "--numstat", "--format=", sha],
+            capture_output=True, text=True, timeout=30,
+        ).stdout
+        expect_adds = expect_dels = 0
+        expect_files = 0
+        for line in numstat.splitlines():
+            tabs = line.split("\t")
+            if len(tabs) == 3 and tabs[0].isdigit() and tabs[1].isdigit():
+                expect_adds += int(tabs[0])
+                expect_dels += int(tabs[1])
+                expect_files += 1
+        body = client.get("/commit/detail", params={"path": opened, "sha": sha}).json()
+        assert body["additions"] == expect_adds
+        assert body["deletions"] == expect_dels
+        assert len(body["files"]) == expect_files
+        if expect_files:
+            per_file = {f["path"]: f for f in body["files"]}
+            for line in numstat.splitlines():
+                tabs = line.split("\t")
+                if len(tabs) == 3 and tabs[0].isdigit() and tabs[1].isdigit():
+                    f = per_file[tabs[2]]
+                    assert f["additions"] == int(tabs[0])
+                    assert f["deletions"] == int(tabs[1])
 
 
 class TestRefsPagination:

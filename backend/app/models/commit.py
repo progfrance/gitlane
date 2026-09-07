@@ -26,6 +26,7 @@ class CommitItem(BaseModel):
     additions: int = 0
     deletions: int = 0
     is_head: bool = False
+    matched: bool = True
 
 
 class HistoryEnvelope(BaseModel):
@@ -33,6 +34,10 @@ class HistoryEnvelope(BaseModel):
     next_cursor: str | None = None
     has_more: bool = False
     total: int = 0
+    # Of the filtered set: how many are actual search hits (the rest are
+    # parent-context rows kept for graph connectivity). Equals total when
+    # there is no query.
+    matched_total: int = 0
     max_lane: int = 0
     active_ref: str = "HEAD"
 

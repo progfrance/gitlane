@@ -12,6 +12,8 @@ export interface RepoState {
   repo: { name: string; path: string; head: string; commit_count: number; remote: string | null } | null;
   items: import("../api/client").CommitItem[];
   total: number;
+  /** Of `total`: actual search hits (the rest are parent-context rows). */
+  matchedTotal: number;
   maxLane: number;
   timeline: import("../api/client").TimelineData | null;
   status: "idle" | "loading" | "ready" | "error";
@@ -35,6 +37,7 @@ let state: RepoState = {
   repo: null,
   items: [],
   total: 0,
+  matchedTotal: 0,
   maxLane: 0,
   timeline: null,
   status: "idle",

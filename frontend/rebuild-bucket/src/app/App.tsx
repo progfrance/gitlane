@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  fetchCurrentRepo, fetchHistory, fetchRecentRepos, fetchRefs, fetchTimeline, isAbort, openRepo,
+  ApiError, fetchCurrentRepo, fetchHistory, fetchRecentRepos, fetchRefs, fetchTimeline, isAbort, openRepo,
 } from "../api/client";
 import { useRepoEvents } from "../api/events";
 import { repoStore, useStore } from "../store/useRepoStore";
@@ -21,6 +21,7 @@ export default function App() {
   const repoPath = useStore((s) => s.repoPath);
   const items = useStore((s) => s.items);
   const total = useStore((s) => s.total);
+  const matchedTotal = useStore((s) => s.matchedTotal);
   const maxLane = useStore((s) => s.maxLane);
   const timeline = useStore((s) => s.timeline);
   const status = useStore((s) => s.status);
@@ -59,7 +60,13 @@ export default function App() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const load = useCallback(async (path: string, q: string, reopen = true, ref?: string) => {
+  // Self-reference for the 404-retry below (the const isn't bound yet inside
+  // its own useCallback body at definition time).
+  const loadRef = useRef<(path: string, q: string, reopen?: boolean, ref?: string) => Promise<void>>(
+    () => Promise.resolve(),
+  );
+
+  const load = useCallback(async (path: string, q: string, reopen = true, ref?: string): Promise<void> => {
     const { seq, signal } = cancelInflight();
     const t0 = performance.now();
     const prev = repoStore.get();
@@ -82,6 +89,7 @@ export default function App() {
         repoPath,
         items: history.items,
         total: history.total,
+        matchedTotal: history.matched_total,
         maxLane: history.max_lane,
         timeline: tl,
         status: "ready",
@@ -93,11 +101,20 @@ export default function App() {
       });
     } catch (e) {
       if (isAbort(e) || signal.aborted || seq !== loadSeq.current) return;
+      // A 404 on a non-reopen load means the server evicted this repo while
+      // the request was in flight (repo switch). Reopen once and retry.
+      if (!reopen && e instanceof ApiError && e.status === 404) {
+        return loadRef.current(path, q, true, ref);
+      }
       repoStore.set({ status: "error", error: e instanceof Error ? e.message : String(e), loadingMore: false });
     }
   }, [cancelInflight]);
+  loadRef.current = load;
 
   // Refresh the branch list + recent repos for the header selectors.
+  // Best-effort: a mid-switch 404 (repo not yet open server-side) or an
+  // evicted entry must never surface as an unhandled rejection — the next
+  // successful load re-fetches meta anyway.
   const refreshMeta = useCallback(async (path: string | null, signal?: AbortSignal) => {
     if (!path) return;
     try {
@@ -108,9 +125,7 @@ export default function App() {
         branches: [...refs.local_branches, ...refs.remote_branches],
         recentRepos: recents,
       });
-    } catch (e) {
-      if (!isAbort(e)) throw e;
-    }
+    } catch { /* stale or transient — ignore */ }
   }, []);
 
   const resetScrollTop = useCallback(() => {
@@ -305,6 +320,7 @@ export default function App() {
         recentRepos={recentRepos}
         query={query}
         total={total}
+        matchedCount={query ? matchedTotal : undefined}
         onQuery={onQuery}
         isRefreshing={isRefreshing}
         onRefresh={onRefresh}
@@ -362,6 +378,7 @@ export default function App() {
         repoPath={repoPath}
         sha={selectedSha}
         onClose={() => repoStore.set({ selectedSha: null })}
+        onNavigate={(p) => repoStore.set({ selectedSha: p })}
       />
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>

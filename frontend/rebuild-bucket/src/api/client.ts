@@ -32,6 +32,7 @@ export interface CommitItem {
   additions: number;
   deletions: number;
   is_head: boolean;
+  matched?: boolean;
 }
 
 export interface HistoryEnvelope {
@@ -39,6 +40,7 @@ export interface HistoryEnvelope {
   next_cursor: string | null;
   has_more: boolean;
   total: number;
+  matched_total: number;
   max_lane: number;
   active_ref: string;
 }
@@ -93,6 +95,15 @@ export function isAbort(e: unknown): boolean {
   return e instanceof DOMException && e.name === "AbortError";
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = `${res.status}`;
@@ -100,7 +111,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
       const body = await res.json();
       if (body?.detail) detail = String(body.detail);
     } catch { /* keep status */ }
-    throw new Error(detail);
+    throw new ApiError(detail, res.status);
   }
   return res.json() as Promise<T>;
 }
