@@ -143,9 +143,13 @@ export default function CommitDetailPanel({ repoPath, sha, onClose }: Props) {
             <span className="commit-date">{formatRelativeTime(detail.timestamp)}</span>
           </div>
           {detail.refs.length > 0 && <RefsPills refs={detail.refs} />}
+          {(detail.additions > 0 || detail.deletions > 0) && (
+            <div className="detail-stats">
+              <span className="diff-num add">+{detail.additions}</span>
+              <span className="diff-num del">−{detail.deletions}</span>
+            </div>
+          )}
           <div className="detail-stats">
-            <span className="diff-num add">+{detail.additions}</span>
-            <span className="diff-num del">−{detail.deletions}</span>
             <span className="detail-parents">
               {t("detail_parents", { n: detail.parents.length })}
             </span>
