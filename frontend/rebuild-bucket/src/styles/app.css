@@ -682,7 +682,7 @@ body {
   right: 0;
   bottom: 0;
   width: min(420px, 92vw);
-  background: var(--bg-panel);
+  background: var(--bg-app);
   border-left: 1px solid var(--border-soft);
   box-shadow: -8px 0 28px rgba(0, 0, 0, 0.10);
   display: flex;
@@ -696,6 +696,7 @@ body {
   inset: 0;
   background: rgba(0, 0, 0, 0.18);
   z-index: -1;
+  pointer-events: none;
 }
 
 .detail-header {
@@ -763,6 +764,12 @@ body {
   gap: 10px;
   font-size: 12px;
   font-family: var(--font-mono);
+}
+
+.detail-drawer .commit-sha,
+.detail-drawer a {
+  pointer-events: none;
+  cursor: default;
 }
 
 .detail-parents {
