@@ -369,24 +369,6 @@ class CommitDetailData:
     files: list[dict] = field(default_factory=list)
 
 
-def _numstat_new_path(p: str) -> str:
-    """Resolve the post-image path of a `--numstat` path field.
-
-    Plain paths pass through; renames arrive as `old => new`, possibly
-    with git's brace collapsing (`dir/{a.txt => b.txt}`).
-    """
-    if " => " not in p:
-        return p
-    lbrace, rbrace = p.find("{"), p.find("}")
-    arrow = p.find(" => ")
-    if 0 <= lbrace < arrow < rbrace:
-        prefix, inner, suffix = p[:lbrace], p[lbrace + 1 : rbrace], p[rbrace + 1 :]
-        _, _, new_inner = inner.partition(" => ")
-        return f"{prefix}{new_inner}{suffix}"
-    _, _, new = p.partition(" => ")
-    return new
-
-
 # LRU cache for commit-detail reads: keyboard navigation (j/k) re-selects
 # neighbours and the drawer keeps re-rendering, so 1 git call per open
 # becomes many per second. 200 entries covers the visible viewport and a
@@ -453,10 +435,9 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
     full_sha, parents, an, ae, at, subject, body = (parts + [""] * 7)[:7]
 
     # Parse the body section: `--raw` lines carry the file status, `--numstat`
-    # lines the add/del counts. Both name the post-image path (renames shown
-    # as `old => new` in numstat), which joins the two halves one file at a
-    # time. `--no-renames` keeps the raw/downloaded path identical so the
-    # join key matches without brace-expansion.
+    # lines the add/del counts. `--no-renames` (fixed argv above) makes both
+    # sections name the same plain path, so the join key matches directly —
+    # no `old => new` / brace-collapse handling needed.
     files: list[dict] = []
     per_file: dict[str, list[int]] = {}
     total_adds = 0
@@ -485,7 +466,7 @@ def read_commit_detail(repo_path: str, sha: str) -> CommitDetailData:
             elif len(tabs) == 3 and tabs[0].isdigit() and tabs[1].isdigit():
                 # numstat row: "<adds>\t<dels>\t<path>"
                 adds, dels = int(tabs[0]), int(tabs[1])
-                path = _numstat_new_path(tabs[2].strip())
+                path = tabs[2].strip()
                 per_file[path] = [adds, dels]
                 total_adds += adds
                 total_dels += dels

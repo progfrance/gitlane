@@ -396,11 +396,17 @@ class TestCommitDetail:
         assert r.status_code == 404
 
     def test_detail_stats_match_numstat(self, opened, client):
-        """Regression: --name-status used to swallow --numstat (totals +0/-0)."""
+        """Regression: --name-status used to swallow --numstat (totals +0/-0).
+
+        The reference command mirrors the implementation's flags exactly
+        (--first-parent included): on merge commits the combined diff and
+        the first-parent diff legitimately differ, so comparing against a
+        plain `git show --numstat` would assert the wrong expectation.
+        """
         import subprocess
         sha = client.get("/history", params={"path": opened, "limit": 1}).json()["items"][0]["sha"]
         numstat = subprocess.run(
-            ["git", "-C", opened, "show", "--numstat", "--format=", sha],
+            ["git", "-C", opened, "show", "--numstat", "--no-renames", "--first-parent", "--format=", sha],
             capture_output=True, text=True, timeout=30,
         ).stdout
         expect_adds = expect_dels = 0

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..models.commit import CommitItem, HistoryEnvelope, RefBadge, TimelineResponse
 from ..services import view_builder
+from ..services.lane_layout import compute_layout
 from ..services.timeline_builder import build_timeline
 from ..services.cache import RefView
 from .errors import require_state, resolve_view
@@ -143,10 +144,10 @@ def history(
     if q:
         q_lower = q.lower()
         matched = [(c, b) for c, b, pre, names in precomputed if _matches(pre, q_lower, names)]
-        # Include the parents of every match (transitively along first-parent
-        # ancestry within this view) so the lane graph stays connected: the
-        # search hits render on the same lanes as in the full history, with
-        # the non-matching ancestors shown dimmed as context.
+        # Include the ancestors of every match (transitively, through all
+        # parents, within this view) so the lane graph stays connected: a
+        # merge hit needs both parents present for its curves to land on a
+        # rendered row. Non-matching ancestors render dimmed as context.
         if matched:
             by_sha = {c.sha: (c, b) for c, b, _pre, _names in precomputed}
             matched_shas = {c.sha for c, _ in matched}
@@ -186,7 +187,6 @@ def history(
         # context) so graph nodes/segments stay connected across the gaps
         # left by non-matching commits — full-history positions would draw
         # dangling curves pointing at rows that are not rendered.
-        from ..services.lane_layout import compute_layout
         page_shas = [c.sha for c, _, _ in page]
         page_set = set(page_shas)
         parents_map = {c.sha: [p for p in c.parents if p in page_set] for c, _, _ in page}

@@ -7,6 +7,7 @@ Routes must use these helpers instead of ad-hoc try/except mapping.
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import HTTPException
 
@@ -23,8 +24,6 @@ def require_state(path: str):
     repository — in-flight /history or /refs calls must not 404 mid-switch.
     Only paths that are not (or no longer) a repo raise 404.
     """
-    import os
-
     from ..services.cache import cache
     from .routes_repo import reload_state
 
