@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import routes_browse, routes_events, routes_history, routes_recent, routes_refs, routes_repo
+from .api import routes_browse, routes_events, routes_history, routes_recent, routes_refs, routes_repo, routes_tags
 from .services.watcher import start_watcher, stop_watcher
 from .services import recent
 from .services.cache import cache
@@ -37,6 +37,7 @@ app.include_router(routes_refs.router)
 app.include_router(routes_events.router)
 app.include_router(routes_recent.router)
 app.include_router(routes_browse.router)
+app.include_router(routes_tags.router)
 
 
 @app.get("/api/health")

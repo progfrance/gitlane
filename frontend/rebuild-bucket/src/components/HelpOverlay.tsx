@@ -19,6 +19,7 @@ const SHORTCUTS: Shortcut[] = [
   { keys: "Enter", descKey: "sc_open" },
   { keys: "Esc", descKey: "sc_clear" },
   { keys: "Ctrl+O", descKey: "sc_picker" },
+  { keys: "t", descKey: "sc_tags" },
   { keys: "?", descKey: "sc_help" },
 ];
 

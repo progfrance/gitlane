@@ -12,6 +12,7 @@ import MiniTimeline from "../components/MiniTimeline";
 import VirtualCommitTable from "../components/VirtualCommitTable";
 import CommitDetailPanel from "../components/CommitDetail";
 import HelpOverlay from "../components/HelpOverlay";
+import TagsPanel from "../components/TagsPanel";
 import { startUrlSync } from "../store/urlSync";
 import { graphWidth as computeGraphWidth } from "../graph/coords";
 
@@ -39,6 +40,7 @@ export default function App() {
   const [pathInput, setPathInput] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<number | undefined>(undefined);
@@ -242,6 +244,18 @@ export default function App() {
   }, [load, refreshMeta, resetScrollTop]);
   useEffect(() => () => window.clearTimeout(repoSwitchTimer.current), []);
 
+  // Open the chosen repo at the chosen tag, closing the search panel.
+  const openRepoAtTag = useCallback((path: string, tag: string) => {
+    setTagsPanelOpen(false);
+    repoStore.set({ activeRef: tag, query: "", selectedSha: null });
+    resetScrollTop();
+    window.clearTimeout(repoSwitchTimer.current);
+    repoSwitchTimer.current = window.setTimeout(() => {
+      void load(path, "", true, tag);
+      void refreshMeta(path);
+    }, 50);
+  }, [load, refreshMeta, resetScrollTop]);
+
   // Keyboard shortcuts: Ctrl+O picker, "/" search, Escape clears, j/k moves.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -258,9 +272,17 @@ export default function App() {
       } else if (e.key === "?" && !typing) {
         e.preventDefault();
         setHelpOpen(true);
-      } else if (e.key === "Escape" && typing) {
-        (target as HTMLInputElement).blur();
-        repoStore.set({ query: "" });
+      } else if (e.key === "t" && !typing) {
+        e.preventDefault();
+        setTagsPanelOpen((open) => !open);
+      } else if (e.key === "Escape") {
+        if (tagsPanelOpen) {
+          e.preventDefault();
+          setTagsPanelOpen(false);
+        } else if (typing) {
+          (target as HTMLInputElement).blur();
+          repoStore.set({ query: "" });
+        }
       } else if ((e.key === "j" || e.key === "k") && !typing) {
         e.preventDefault();
         const cur = repoStore.get();
@@ -273,7 +295,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [tagsPanelOpen]);
 
   // Reload on window focus ONLY when WS events arrived while hidden.
   useEffect(() => {
@@ -326,6 +348,7 @@ export default function App() {
         onRefresh={onRefresh}
         onBranch={handleBranch}
         onRepo={handleRepo}
+        onOpenTagsPanel={() => setTagsPanelOpen(true)}
         searchRef={searchRef}
       />
       <MiniTimeline data={timeline} />
@@ -381,6 +404,12 @@ export default function App() {
         onNavigate={(p) => repoStore.set({ selectedSha: p })}
       />
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <TagsPanel
+        open={tagsPanelOpen}
+        defaultRoot={repo?.path ?? ""}
+        onClose={() => setTagsPanelOpen(false)}
+        onOpen={openRepoAtTag}
+      />
     </div>
   );
 }
