@@ -93,6 +93,40 @@ def repo_name(path: str) -> str:
     return os.path.basename(os.path.normpath(path)) or path
 
 
+def read_tags_with_dates(repo_path: str) -> dict[str, tuple[str, int]]:
+    """Read all tags in `repo_path` along with their tagger timestamp.
+
+    Returns {shortname: (sha, tagger_unix_ts)}.
+
+    `tagger_unix_ts` is 0 for lightweight tags (no tagger object). For
+    annotated tags it is the tagger date (seconds since epoch). Raises
+    GitError on git failure (caller catches and treats as 'missing').
+    """
+    out = _run(
+        repo_path,
+        [
+            "for-each-ref",
+            "--format=%(refname:short)%00%(objectname)%00%(*taggerdate:unix)",
+            "refs/tags/",
+        ],
+        timeout=5,
+    )
+    tags: dict[str, tuple[str, int]] = {}
+    for line in out.splitlines():
+        if not line or "\x00" not in line:
+            continue
+        parts = line.split("\x00")
+        if len(parts) < 3:
+            continue
+        name, sha, ts = parts[0], parts[1], parts[2]
+        try:
+            ts_int = int(ts) if ts.isdigit() or (ts.startswith("-") and ts[1:].isdigit()) else 0
+        except ValueError:
+            ts_int = 0
+        tags[name] = (sha, ts_int)
+    return tags
+
+
 def read_refs(repo_path: str) -> RefsData:
     data = RefsData()
     try:

@@ -18,6 +18,7 @@ interface Props {
   onRefresh: () => void;
   onBranch: (ref: string) => void;
   onRepo: (path: string) => void;
+  onOpenTagsPanel: () => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }
 
@@ -35,9 +36,16 @@ const BranchIcon = (
   </svg>
 );
 
+/** Tag icon SVG (orange-tinted variant for the cross-repo tag search button). */
+const TagIcon = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M2.5 7.5a3.5 3.5 0 0 1 7 0V11a3 3 0 0 1-3 3H4a1 1 0 1 1 0-2h2.5a1 1 0 1 0 0-2H4a3 3 0 0 1-3-3v-.5ZM9.5 6h-7v-2h7V1.5l4.5 4.5-4.5 4.5V6Z" />
+  </svg>
+);
+
 export default function TopToolbar({
   repo, activeRef, branches, recentRepos, query, total, matchedCount, isRefreshing,
-  onQuery, onRefresh, onBranch, onRepo, searchRef,
+  onQuery, onRefresh, onBranch, onRepo, onOpenTagsPanel, searchRef,
 }: Props) {
   const { t, locale, setLocale } = useI18n();
 
@@ -128,6 +136,16 @@ export default function TopToolbar({
       >
         <span aria-hidden="true" style={{ marginRight: 4 }}>{RepoIcon}</span>
         {t("repo_btn")}
+      </button>
+      <button
+        type="button"
+        className="toolbar-btn toolbar-btn-tags"
+        title={t("tags_panel_title")}
+        aria-label={t("tags_panel_title")}
+        onClick={onOpenTagsPanel}
+      >
+        <span aria-hidden="true" style={{ marginRight: 4 }}>{TagIcon}</span>
+        {t("tags_panel_btn")}
       </button>
       <span className="toolbar-sep" />
       <span className="toolbar-count">
